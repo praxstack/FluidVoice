@@ -1015,18 +1015,18 @@ struct OnboardingFlowView: View {
                             get: { self.playgroundText },
                             set: { _ in }
                         ))
-                            .font(.body)
-                            .frame(height: 170)
-                            .padding(10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(self.theme.palette.cardBackground)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                            .stroke(self.theme.palette.cardBorder.opacity(0.6), lineWidth: 1)
-                                    )
-                            )
-                            .scrollContentBackground(.hidden)
+                        .font(.body)
+                        .frame(height: 170)
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(self.theme.palette.cardBackground)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(self.theme.palette.cardBorder.opacity(0.6), lineWidth: 1)
+                                )
+                        )
+                        .scrollContentBackground(.hidden)
 
                         if self.isPlaygroundReady {
                             HStack(spacing: 6) {
