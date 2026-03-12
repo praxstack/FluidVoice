@@ -796,11 +796,21 @@ struct OnboardingFlowView: View {
                         if self.isPreparingRecommendedModel {
                             VStack(alignment: .leading, spacing: 6) {
                                 if self.asr.isDownloadingModel, let progress = self.asr.downloadProgress {
-                                    ProgressView(value: progress)
-                                        .tint(self.theme.palette.accent)
-                                    Text("Downloading \(Int(progress * 100))%")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                    if progress >= 0.82 {
+                                        HStack(spacing: 8) {
+                                            ProgressView()
+                                                .controlSize(.small)
+                                            Text("Finalizing download and loading model…")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    } else {
+                                        ProgressView(value: progress)
+                                            .tint(self.theme.palette.accent)
+                                        Text("Downloading \(Int(progress * 100))%")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
                                 } else {
                                     HStack(spacing: 8) {
                                         ProgressView()
@@ -1191,11 +1201,21 @@ struct OnboardingFlowView: View {
 
             if isPreparing {
                 if self.asr.isDownloadingModel, let progress = self.asr.downloadProgress {
-                    ProgressView(value: progress)
-                        .tint(self.theme.palette.accent)
-                    Text("Downloading \(Int(progress * 100))%")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    if progress >= 0.82 {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.mini)
+                            Text("Finalizing...")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        ProgressView(value: progress)
+                            .tint(self.theme.palette.accent)
+                        Text("Downloading \(Int(progress * 100))%")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
                     Text("Loading model...")
                         .font(.caption2)
