@@ -1106,7 +1106,7 @@ final class SettingsStore: ObservableObject {
     }
 
     enum TranscriptionStartSound: String, CaseIterable, Identifiable {
-        case none = "none"
+        case none
         case fluidSfx1 = "fluid_sfx_1"
         case fluidSfx2 = "fluid_sfx_2"
         case fluidSfx3 = "fluid_sfx_3"
