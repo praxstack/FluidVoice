@@ -73,6 +73,7 @@ final class TypingService {
         let window = Self.copyAXElementAttribute(from: appElement, attribute: kAXFocusedWindowAttribute as CFString)
             ?? Self.copyAXElementAttribute(from: appElement, attribute: kAXMainWindowAttribute as CFString)
         Self.storeFocusSnapshot(FocusSnapshot(pid: pid, window: window, element: element))
+        Self.logFocusState("[TypingService] Captured focus snapshot")
         return pid
     }
 
@@ -82,6 +83,7 @@ final class TypingService {
         guard let snapshot = Self.loadFocusSnapshot(),
               snapshot.pid == pid else { return false }
 
+        Self.logFocusState("[TypingService] Before restoreCapturedFocus")
         let appElement = AXUIElementCreateApplication(pid)
 
         if let window = snapshot.window {
@@ -100,12 +102,15 @@ final class TypingService {
                 kCFBooleanTrue
             )
             if result == .success, Self.isCurrentlyFocusedElement(element, expectedPID: pid) {
+                Self.logFocusState("[TypingService] After restoreCapturedFocus success")
                 return true
             }
             usleep(50_000)
         }
 
-        return Self.isCurrentlyFocusedElement(element, expectedPID: pid)
+        let isFocused = Self.isCurrentlyFocusedElement(element, expectedPID: pid)
+        Self.logFocusState("[TypingService] After restoreCapturedFocus final result=\(isFocused)")
+        return isFocused
     }
 
     /// Best-effort: activates the app with the given PID, unless it's Fluid itself.
@@ -221,6 +226,7 @@ final class TypingService {
         } else {
             self.log("[TypingService] WARNING: Could not determine focused AX element PID")
         }
+        Self.logFocusState("[TypingService] Before insertion pipeline")
 
         if let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier {
             self.log("[TypingService] Frontmost PID: \(frontPID)")
@@ -292,6 +298,43 @@ final class TypingService {
         guard result == .success, let value else { return nil }
         guard CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
         return unsafeBitCast(value, to: AXUIElement.self)
+    }
+
+    private static func stringAXAttribute(from element: AXUIElement, attribute: CFString) -> String? {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, attribute, &value)
+        guard result == .success else { return nil }
+        return value as? String
+    }
+
+    private static func currentFocusDebugDescription() -> String {
+        let systemWideElement = AXUIElementCreateSystemWide()
+        var focusedElementRef: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(
+            systemWideElement,
+            kAXFocusedUIElementAttribute as CFString,
+            &focusedElementRef
+        )
+        guard result == .success, let focusedElementRef else {
+            return "focusedElement=unavailable result=\(result.rawValue)"
+        }
+        guard CFGetTypeID(focusedElementRef) == AXUIElementGetTypeID() else {
+            return "focusedElement=unexpectedType"
+        }
+
+        let element = unsafeBitCast(focusedElementRef, to: AXUIElement.self)
+        var pid: pid_t = 0
+        AXUIElementGetPid(element, &pid)
+        let role = Self.stringAXAttribute(from: element, attribute: kAXRoleAttribute as CFString) ?? "unknown"
+        let subrole = Self.stringAXAttribute(from: element, attribute: kAXSubroleAttribute as CFString) ?? "none"
+        let title = Self.stringAXAttribute(from: element, attribute: kAXTitleAttribute as CFString) ?? "none"
+        let description = Self.stringAXAttribute(from: element, attribute: kAXDescriptionAttribute as CFString) ?? "none"
+        return "focusedPID=\(pid) role=\(role) subrole=\(subrole) title=\(title) description=\(description)"
+    }
+
+    private static func logFocusState(_ prefix: String) {
+        guard Self.isLoggingEnabled else { return }
+        DebugLogger.shared.debug("\(prefix) | \(Self.currentFocusDebugDescription())", source: "TypingService")
     }
 
     private static func isCurrentlyFocusedElement(_ expectedElement: AXUIElement, expectedPID: pid_t) -> Bool {
