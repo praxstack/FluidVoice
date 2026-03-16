@@ -36,6 +36,7 @@ final class TypingService {
         case globalPaste = "global_paste"
         case pidPaste = "pid_paste"
         case menuPaste = "menu_paste"
+        case allPasteMethods = "all_paste_methods"
         case unicodePID = "unicode_pid"
         case accessibilityOnly = "ax_only"
     }
@@ -331,12 +332,40 @@ final class TypingService {
             return self.insertTextViaClipboardToPid(text, targetPID: preferredTargetPID)
         case .menuPaste:
             return self.insertTextViaMenuPaste(text)
+        case .allPasteMethods:
+            return self.runAllPasteMethodTests(text: text, preferredTargetPID: preferredTargetPID)
         case .unicodePID:
             guard let preferredTargetPID, preferredTargetPID > 0 else { return false }
             return self.insertTextBulkInstant(text, targetPID: preferredTargetPID)
         case .accessibilityOnly:
             return self.insertTextViaAccessibility(text)
         }
+    }
+
+    private func runAllPasteMethodTests(text: String, preferredTargetPID: pid_t?) -> Bool {
+        self.log("[TypingService] Running all paste method tests sequentially")
+
+        let tests: [(label: String, action: () -> Bool)] = [
+            ("global_paste", { self.insertTextViaClipboard("[global_paste] \(text)") }),
+            ("menu_paste", { self.insertTextViaMenuPaste("[menu_paste] \(text)") }),
+            ("pid_paste", {
+                guard let preferredTargetPID, preferredTargetPID > 0 else { return false }
+                return self.insertTextViaClipboardToPid("[pid_paste] \(text)", targetPID: preferredTargetPID)
+            }),
+        ]
+
+        var attemptedAny = false
+        var succeeded = false
+
+        for test in tests {
+            attemptedAny = true
+            let didSucceed = test.action()
+            self.log("[TypingService] Paste test \(test.label) success=\(didSucceed)")
+            succeeded = succeeded || didSucceed
+            usleep(350_000)
+        }
+
+        return attemptedAny && succeeded
     }
 
     private static let cgEventUnicodeLimit = 200
