@@ -569,14 +569,16 @@ struct SettingsView: View {
                                     }
                                     Divider().opacity(0.2)
 
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        Text("Text Insertion Mode")
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundStyle(.primary)
+                                    HStack(alignment: .center) {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Text Insertion Mode")
+                                                .font(.body)
+                                            Text(SettingsStore.shared.textInsertionMode.description)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
 
-                                        Text(SettingsStore.shared.textInsertionMode.description)
-                                            .font(.system(size: 12))
-                                            .foregroundStyle(.secondary)
+                                        Spacer()
 
                                         Picker("", selection: Binding(
                                             get: { SettingsStore.shared.textInsertionMode },
@@ -586,7 +588,8 @@ struct SettingsView: View {
                                                 Text(mode.displayName).tag(mode)
                                             }
                                         }
-                                        .pickerStyle(.segmented)
+                                        .pickerStyle(.menu)
+                                        .frame(width: 170, alignment: .trailing)
                                     }
                                     Divider().opacity(0.2)
 
