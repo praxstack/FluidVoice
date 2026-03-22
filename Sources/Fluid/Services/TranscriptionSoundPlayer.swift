@@ -98,7 +98,11 @@ final class TranscriptionSoundPlayer {
         var size = UInt32(MemoryLayout<AudioObjectID>.size)
         let status = AudioObjectGetPropertyData(
             AudioObjectID(kAudioObjectSystemObject),
-            &address, 0, nil, &size, &deviceID
+            &address,
+            0,
+            nil,
+            &size,
+            &deviceID
         )
         guard status == noErr, deviceID != kAudioObjectUnknown else { return nil }
         return deviceID
