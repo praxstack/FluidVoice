@@ -1749,17 +1749,56 @@ struct BottomOverlayView: View {
         self.activePromptMode != nil
     }
 
+    private var promptResolutionBundleID: String? {
+        self.activeAppMonitor.activeAppBundleID
+    }
+
+    private var isAppPromptOverrideActive: Bool {
+        guard let activePromptMode else { return false }
+        return self.settings.hasAppPromptBinding(
+            for: activePromptMode,
+            appBundleID: self.promptResolutionBundleID
+        )
+    }
+
     private var selectedPromptLabel: String {
         guard let activePromptMode else { return "N/A" }
-        if let profile = self.settings.selectedPromptProfile(for: activePromptMode) {
+        if let profile = self.settings.resolvedPromptProfile(
+            for: activePromptMode,
+            appBundleID: self.promptResolutionBundleID
+        ) {
             let name = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
             return name.isEmpty ? "Untitled" : name
         }
         return "Default"
     }
 
+    private var promptSelectorDisplayLabel: String {
+        let label = self.selectedPromptLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !label.isEmpty else { return "Default" }
+
+        let maxLength: Int
+        if self.isCompactControls {
+            maxLength = self.isAppPromptOverrideActive ? 6 : 11
+        } else {
+            maxLength = self.isAppPromptOverrideActive ? 11 : 16
+        }
+
+        guard label.count > maxLength else { return label }
+        let prefixLength = max(maxLength - 3, 1)
+        return "\(label.prefix(prefixLength))..."
+    }
+
     private var promptSelectorFontSize: CGFloat {
         max(self.layout.modeFontSize - 1, 9)
+    }
+
+    private var promptSelectorLabelFontSize: CGFloat {
+        max(self.promptSelectorFontSize - 1, 8)
+    }
+
+    private var promptSelectorChipWidth: CGFloat {
+        self.isCompactControls ? 100 : 164
     }
 
     private var promptSelectorVerticalPadding: CGFloat {
@@ -1990,15 +2029,28 @@ struct BottomOverlayView: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }
-            Text(self.selectedPromptLabel)
-                .font(.system(size: self.promptSelectorFontSize, weight: .semibold))
+            Text(self.promptSelectorDisplayLabel)
+                .font(.system(size: self.promptSelectorLabelFontSize, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.75))
                 .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if self.isAppPromptOverrideActive {
+                Text("App")
+                    .font(.system(size: max(self.promptSelectorFontSize - 2, 8), weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.15))
+                    )
+            }
             Image(systemName: "chevron.up")
                 .font(.system(size: max(self.promptSelectorFontSize - 1, 8), weight: .semibold))
                 .foregroundStyle(.white.opacity(0.45))
         }
-        .fixedSize(horizontal: true, vertical: false)
+        .frame(width: self.promptSelectorChipWidth, alignment: .leading)
         .padding(.horizontal, 8)
         .padding(.vertical, self.promptSelectorVerticalPadding)
         .background(
