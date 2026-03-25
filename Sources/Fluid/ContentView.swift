@@ -2155,6 +2155,8 @@ struct ContentView: View {
     }
 
     private func clearActiveRecordingMode() {
+        self.promptModeOverrideText = nil
+        NotchContentState.shared.promptModeOverrideProfileName = nil
         self.setActiveRecordingMode(.none)
     }
 
@@ -2566,12 +2568,13 @@ struct ContentView: View {
                 DebugLogger.shared.info("Prompt mode triggered", source: "ContentView")
                 self.captureRecordingContext()
 
-                // Resolve the prompt text from the selected profile
+                // Resolve the full system prompt for the selected profile
                 let settings = SettingsStore.shared
                 if let promptID = settings.promptModeSelectedPromptID,
                    let profile = settings.dictationPromptProfiles.first(where: { $0.id == promptID })
                 {
-                    self.promptModeOverrideText = profile.prompt
+                    let body = SettingsStore.stripBasePrompt(for: .dictate, from: profile.prompt)
+                    self.promptModeOverrideText = SettingsStore.combineBasePrompt(for: .dictate, with: body)
                     NotchContentState.shared.promptModeOverrideProfileName = profile.name
                 }
 
