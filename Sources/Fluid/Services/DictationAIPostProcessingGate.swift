@@ -8,7 +8,8 @@ enum DictationAIPostProcessingGate {
     /// - For other providers: requires a local endpoint OR a non-empty API key
     static func isConfigured() -> Bool {
         let settings = SettingsStore.shared
-        guard settings.enableAIProcessing else { return false }
+        let hasCustomPrompt = settings.selectedPromptID(for: .dictate) != nil
+        guard settings.enableAIProcessing || hasCustomPrompt else { return false }
 
         let providerID = settings.selectedProviderID
         if providerID == "apple-intelligence" {

@@ -23,6 +23,9 @@ struct SettingsView: View {
     @Binding var accessibilityEnabled: Bool
     @Binding var hotkeyShortcut: HotkeyShortcut
     @Binding var isRecordingShortcut: Bool
+    @Binding var promptModeShortcut: HotkeyShortcut
+    @Binding var isRecordingPromptModeShortcut: Bool
+    @Binding var promptModeShortcutEnabled: Bool
     @Binding var commandModeShortcut: HotkeyShortcut
     @Binding var isRecordingCommandModeShortcut: Bool
     @Binding var rewriteShortcut: HotkeyShortcut
@@ -568,6 +571,54 @@ struct SettingsView: View {
                                             self.isRecordingShortcut = true
                                         }
                                     )
+                                    Divider().opacity(0.2).padding(.vertical, 4)
+
+                                    self.shortcutRow(
+                                        icon: "text.bubble.fill",
+                                        iconColor: .secondary,
+                                        title: "Transcribe with Prompt",
+                                        description: "Dictate with a specific AI prompt",
+                                        shortcut: self.promptModeShortcut,
+                                        isRecording: self.isRecordingPromptModeShortcut,
+                                        isEnabled: self.$promptModeShortcutEnabled,
+                                        onChangePressed: {
+                                            DebugLogger.shared.debug("Starting to record new prompt mode shortcut", source: "SettingsView")
+                                            self.isRecordingPromptModeShortcut = true
+                                        }
+                                    )
+
+                                    if self.promptModeShortcutEnabled {
+                                        let profiles = self.settings.promptProfiles(for: .dictate)
+                                        if !profiles.isEmpty {
+                                            HStack {
+                                                Text("Prompt")
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(.secondary)
+                                                    .padding(.leading, 30)
+                                                Spacer()
+                                                Picker("", selection: Binding(
+                                                    get: { self.settings.promptModeSelectedPromptID ?? "" },
+                                                    set: { newValue in
+                                                        self.settings.promptModeSelectedPromptID = newValue.isEmpty ? nil : newValue
+                                                    }
+                                                )) {
+                                                    Text("Select a prompt...").tag("")
+                                                    ForEach(profiles) { profile in
+                                                        Text(profile.name.isEmpty ? "Untitled" : profile.name).tag(profile.id)
+                                                    }
+                                                }
+                                                .frame(width: 170)
+                                            }
+                                            .padding(.bottom, 4)
+                                        } else {
+                                            Text("Add prompts in AI Enhancements → Prompt Profiles")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .padding(.leading, 30)
+                                                .padding(.bottom, 4)
+                                        }
+                                    }
+
                                     Divider().opacity(0.2).padding(.vertical, 4)
 
                                     self.shortcutRow(

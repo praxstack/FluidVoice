@@ -20,6 +20,7 @@ class NotchContentState: ObservableObject {
     @Published var mode: OverlayMode = .dictation
     @Published var promptPickerMode: SettingsStore.PromptMode = .dictate
     @Published var isProcessing: Bool = false // AI processing state
+    @Published var promptModeOverrideProfileName: String? = nil // Name shown in overlay when prompt mode hotkey is active
 
     // Icon of the target app (where text will be typed)
     @Published var targetAppIcon: NSImage?

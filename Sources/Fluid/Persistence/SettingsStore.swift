@@ -1591,6 +1591,52 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    // MARK: - Prompt Mode Settings (Transcribe with Prompt)
+
+    var promptModeShortcutEnabled: Bool {
+        get {
+            let value = self.defaults.object(forKey: Keys.promptModeShortcutEnabled)
+            return value as? Bool ?? false
+        }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue, forKey: Keys.promptModeShortcutEnabled)
+        }
+    }
+
+    var promptModeHotkeyShortcut: HotkeyShortcut {
+        get {
+            if let data = defaults.data(forKey: Keys.promptModeHotkeyShortcut),
+               let shortcut = try? JSONDecoder().decode(HotkeyShortcut.self, from: data)
+            {
+                return shortcut
+            }
+            // Default to Right Command key (keyCode: 54, no modifiers)
+            return HotkeyShortcut(keyCode: 54, modifierFlags: [])
+        }
+        set {
+            objectWillChange.send()
+            if let data = try? JSONEncoder().encode(newValue) {
+                self.defaults.set(data, forKey: Keys.promptModeHotkeyShortcut)
+            }
+        }
+    }
+
+    var promptModeSelectedPromptID: String? {
+        get {
+            let value = self.defaults.string(forKey: Keys.promptModeSelectedPromptID)
+            return value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true ? nil : value
+        }
+        set {
+            objectWillChange.send()
+            if let id = newValue?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
+                self.defaults.set(id, forKey: Keys.promptModeSelectedPromptID)
+            } else {
+                self.defaults.removeObject(forKey: Keys.promptModeSelectedPromptID)
+            }
+        }
+    }
+
     var commandModeShortcutEnabled: Bool {
         get {
             let value = self.defaults.object(forKey: Keys.commandModeShortcutEnabled)
@@ -1984,6 +2030,12 @@ final class SettingsStore: ObservableObject {
            self.dictationPromptProfiles.contains(where: { $0.id == id && $0.mode.normalized == .edit }) == false
         {
             self.selectedEditPromptID = nil
+        }
+
+        if let id = self.promptModeSelectedPromptID,
+           self.dictationPromptProfiles.contains(where: { $0.id == id && $0.mode.normalized == .dictate }) == false
+        {
+            self.promptModeSelectedPromptID = nil
         }
 
         let validPromptIDsByMode: [PromptMode: Set<String>] = [
@@ -2894,6 +2946,11 @@ private extension SettingsStore {
         static let commandModeConfirmBeforeExecute = "CommandModeConfirmBeforeExecute"
         static let commandModeLinkedToGlobal = "CommandModeLinkedToGlobal"
         static let commandModeShortcutEnabled = "CommandModeShortcutEnabled"
+
+        // Prompt Mode Keys (Transcribe with Prompt)
+        static let promptModeHotkeyShortcut = "PromptModeHotkeyShortcut"
+        static let promptModeShortcutEnabled = "PromptModeShortcutEnabled"
+        static let promptModeSelectedPromptID = "PromptModeSelectedPromptID"
 
         // Rewrite Mode Keys
         static let rewriteModeHotkeyShortcut = "RewriteModeHotkeyShortcut"
