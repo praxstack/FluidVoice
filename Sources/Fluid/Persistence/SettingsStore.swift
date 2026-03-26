@@ -35,9 +35,13 @@ final class SettingsStore: ObservableObject {
         case write // legacy persisted value (decoded as .edit)
         case rewrite // legacy persisted value (decoded as .edit)
 
-        var id: String { self.rawValue }
+        var id: String {
+            self.rawValue
+        }
 
-        static var visiblePromptModes: [PromptMode] { [.dictate, .edit] }
+        static var visiblePromptModes: [PromptMode] {
+            [.dictate, .edit]
+        }
 
         var normalized: PromptMode {
             switch self {
@@ -723,12 +727,11 @@ final class SettingsStore: ObservableObject {
                 }
             }
 
-            let fallback = self.defaultPromptResolution(
+            return self.defaultPromptResolution(
                 for: normalizedMode,
                 source: .appBindingDefault,
                 appBinding: binding
             )
-            return fallback
         }
 
         if let profile = self.selectedPromptProfile(for: normalizedMode) {
@@ -1234,7 +1237,9 @@ final class SettingsStore: ObservableObject {
         case purple = "Purple"
         case orange = "Orange"
 
-        var id: String { self.rawValue }
+        var id: String {
+            self.rawValue
+        }
 
         var hex: String {
             switch self {
@@ -1254,7 +1259,9 @@ final class SettingsStore: ObservableObject {
         case fluidSfx3 = "fluid_sfx_3"
         case fluidSfx4 = "fluid_sfx_4"
 
-        var id: String { self.rawValue }
+        var id: String {
+            self.rawValue
+        }
 
         var displayName: String {
             switch self {
@@ -2375,8 +2382,8 @@ final class SettingsStore: ObservableObject {
     /// Unified speech recognition model selection.
     /// Replaces the old TranscriptionProviderOption + WhisperModelSize dual-setting.
     enum SpeechModel: String, CaseIterable, Identifiable, Codable {
-        // Temporarily disabled in UI/runtime while Parakeet word boosting work is prioritized.
-        // Flip to `true` in a future round to re-enable Qwen without deleting implementation.
+        /// Temporarily disabled in UI/runtime while Parakeet word boosting work is prioritized.
+        /// Flip to `true` in a future round to re-enable Qwen without deleting implementation.
         static let qwenPreviewEnabled = false
 
         // MARK: - FluidAudio Models (Apple Silicon Only)
@@ -2399,7 +2406,9 @@ final class SettingsStore: ObservableObject {
         case whisperLargeTurbo = "whisper-large-turbo" // temporarily disabled in UI
         case whisperLarge = "whisper-large"
 
-        var id: String { rawValue }
+        var id: String {
+            rawValue
+        }
 
         // MARK: - Display Properties
 
@@ -2841,7 +2850,9 @@ final class SettingsStore: ObservableObject {
         case fluidAudio
         case whisper
 
-        var id: String { rawValue }
+        var id: String {
+            rawValue
+        }
 
         var displayName: String {
             switch self {
@@ -2896,7 +2907,7 @@ final class SettingsStore: ObservableObject {
 // swiftlint:enable type_body_length
 
 private extension SettingsStore {
-    // Keys
+    /// Keys
     enum Keys {
         static let enableAIProcessing = "EnableAIProcessing"
         static let enableDebugLogs = "EnableDebugLogs"
@@ -2971,7 +2982,7 @@ private extension SettingsStore {
         static let fillerWords = "FillerWords"
         static let removeFillerWordsEnabled = "RemoveFillerWordsEnabled"
 
-        // GAAV Mode (removes capitalization and trailing punctuation)
+        /// GAAV Mode (removes capitalization and trailing punctuation)
         static let gaavModeEnabled = "GAAVModeEnabled"
 
         // Custom Dictionary
@@ -2982,7 +2993,7 @@ private extension SettingsStore {
         static let selectedTranscriptionProvider = "SelectedTranscriptionProvider"
         static let whisperModelSize = "WhisperModelSize"
 
-        // Unified Speech Model (replaces above two)
+        /// Unified Speech Model (replaces above two)
         static let selectedSpeechModel = "SelectedSpeechModel"
 
         // Overlay Position
@@ -2992,10 +3003,10 @@ private extension SettingsStore {
         static let overlaySize = "OverlaySize"
         static let transcriptionPreviewCharLimit = "TranscriptionPreviewCharLimit"
 
-        // Media Playback Control
+        /// Media Playback Control
         static let pauseMediaDuringTranscription = "PauseMediaDuringTranscription"
 
-        // Custom Dictation Prompt
+        /// Custom Dictation Prompt
         static let customDictationPrompt = "CustomDictationPrompt"
 
         // Dictation Prompt Profiles (multi-prompt system)
@@ -3015,7 +3026,7 @@ private extension SettingsStore {
         static let defaultWritePromptOverride = "DefaultWritePromptOverride" // legacy fallback key
         static let defaultRewritePromptOverride = "DefaultRewritePromptOverride" // legacy fallback key
 
-        // Streak Settings
+        /// Streak Settings
         static let weekendsDontBreakStreak = "WeekendsDontBreakStreak"
     }
 }
@@ -3025,7 +3036,9 @@ extension SettingsStore {
         case standard
         case reliablePaste
 
-        var id: String { self.rawValue }
+        var id: String {
+            self.rawValue
+        }
 
         var displayName: String {
             switch self {
@@ -3082,7 +3095,9 @@ extension SettingsStore {
         case medium = "ggml-medium.bin"
         case large = "ggml-large-v3.bin"
 
-        var id: String { rawValue }
+        var id: String {
+            rawValue
+        }
 
         var displayName: String {
             switch self {

@@ -13,7 +13,7 @@ import SwiftUI
 @MainActor
 class NotchContentState: ObservableObject {
     static let shared = NotchContentState()
-    // Keep overlay state bounded even during very long recordings.
+    /// Keep overlay state bounded even during very long recordings.
     private static let maxStoredTranscriptionCharacters = SettingsStore.transcriptionPreviewCharLimitRange.upperBound
 
     @Published var transcriptionText: String = ""
@@ -22,14 +22,14 @@ class NotchContentState: ObservableObject {
     @Published var isProcessing: Bool = false // AI processing state
     @Published var promptModeOverrideProfileName: String? = nil // Name shown in overlay when prompt mode hotkey is active
 
-    // Icon of the target app (where text will be typed)
+    /// Icon of the target app (where text will be typed)
     @Published var targetAppIcon: NSImage?
 
     /// The PID of the app we should restore focus to after interacting with overlays.
     /// Captured at recording start to keep the target stable for the session.
     @Published var recordingTargetPID: pid_t? = nil
 
-    // Cached transcription preview text to avoid recomputing on every render
+    /// Cached transcription preview text to avoid recomputing on every render
     @Published private(set) var cachedPreviewText: String = ""
 
     // MARK: - Expanded Command Output State
@@ -46,7 +46,7 @@ class NotchContentState: ObservableObject {
     @Published var recentChats: [ChatSession] = []
     @Published var currentChatTitle: String = "New Chat"
 
-    // Command output message model
+    /// Command output message model
     struct CommandOutputMessage: Identifiable, Equatable {
         let id = UUID()
         let role: Role
@@ -60,7 +60,7 @@ class NotchContentState: ObservableObject {
         }
     }
 
-    // Callback for submitting follow-up commands from the notch
+    /// Callback for submitting follow-up commands from the notch
     var onSubmitFollowUp: ((String) async -> Void)?
 
     private var cancellables = Set<AnyCancellable>()
@@ -296,8 +296,8 @@ struct NotchExpandedView: View {
         }
     }
 
-    // ContentView writes transient status strings into transcriptionText while processing
-    // (e.g. "Transcribing...", "Refining..."). Prefer that when present.
+    /// ContentView writes transient status strings into transcriptionText while processing
+    /// (e.g. "Transcribing...", "Refining..."). Prefer that when present.
     private var processingStatusText: String {
         let t = self.contentState.transcriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty ? self.processingLabel : t
@@ -307,7 +307,7 @@ struct NotchExpandedView: View {
         !self.contentState.transcriptionText.isEmpty
     }
 
-    // Check if there's command history that can be expanded
+    /// Check if there's command history that can be expanded
     private var canExpandCommandHistory: Bool {
         self.contentState.mode == .command && !self.contentState.commandConversationHistory.isEmpty
     }
@@ -753,7 +753,7 @@ struct NotchCommandOutputExpandedView: View {
         70
     }
 
-    // Dynamic height based on content (max half screen)
+    /// Dynamic height based on content (max half screen)
     private var dynamicHeight: CGFloat {
         let baseHeight: CGFloat = 120 // Minimum height
         let contentHeight = self.estimateContentHeight()

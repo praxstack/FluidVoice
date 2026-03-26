@@ -1384,7 +1384,6 @@ private struct BottomOverlayActionsMenuView: View {
             )
     }
 
-    @ViewBuilder
     private func actionRow(
         title: String,
         icon: String,
@@ -1715,8 +1714,8 @@ struct BottomOverlayView: View {
         "Working...",
     ]
 
-    // ContentView writes transient status strings into transcriptionText while processing
-    // (e.g. "Transcribing...", "Refining..."). Prefer that when present.
+    /// ContentView writes transient status strings into transcriptionText while processing
+    /// (e.g. "Transcribing...", "Refining..."). Prefer that when present.
     private var processingStatusText: String {
         let t = self.contentState.transcriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty ? self.processingLabel : t
@@ -2518,11 +2517,25 @@ struct BottomWaveformView: View {
     @State private var barHeights: [CGFloat] = Array(repeating: 6, count: 11)
     @State private var noiseThreshold: CGFloat = .init(SettingsStore.shared.visualizerNoiseThreshold)
 
-    private var barCount: Int { self.layout.barCount }
-    private var barWidth: CGFloat { self.layout.barWidth }
-    private var barSpacing: CGFloat { self.layout.barSpacing }
-    private var minHeight: CGFloat { self.layout.minBarHeight }
-    private var maxHeight: CGFloat { self.layout.maxBarHeight }
+    private var barCount: Int {
+        self.layout.barCount
+    }
+
+    private var barWidth: CGFloat {
+        self.layout.barWidth
+    }
+
+    private var barSpacing: CGFloat {
+        self.layout.barSpacing
+    }
+
+    private var minHeight: CGFloat {
+        self.layout.minBarHeight
+    }
+
+    private var maxHeight: CGFloat {
+        self.layout.maxBarHeight
+    }
 
     private var currentGlowIntensity: CGFloat {
         self.contentState.isProcessing ? 0.0 : 0.5
