@@ -34,8 +34,20 @@ final class TypingService {
 
     private struct FocusedTextSnapshot {
         let pid: pid_t
+        let bundleIdentifier: String?
         let value: String?
         let selectedRange: CFRange?
+        let appScriptValue: String?
+        let appScriptSelectedRange: CFRange?
+    }
+
+    private enum PasteVerificationResult: String {
+        case appScriptContainsText = "appscript_contains_text"
+        case appScriptCaretMovedExpectedDistance = "appscript_caret_moved_expected_distance"
+        case fieldContainsText = "field_contains_text"
+        case caretMovedExpectedDistance = "caret_moved_expected_distance"
+        case timeout = "timeout"
+        case unavailable = "unavailable"
     }
 
     private static let focusSnapshotQueue = DispatchQueue(label: "TypingService.FocusSnapshot")
@@ -521,7 +533,6 @@ final class TypingService {
         }
         let temporaryChangeCount = pasteboard.changeCount
         let focusedTextSnapshot = self.captureFocusedTextSnapshot()
-
         let actionResult = action()
         guard actionResult else {
             self.restorePasteboardSnapshot(snapshot, to: pasteboard)
@@ -530,7 +541,7 @@ final class TypingService {
         }
 
         Self.pasteboardRestoreQueue.async {
-            let verified = self.waitForFocusedTextVerification(
+            _ = self.waitForFocusedTextVerification(
                 from: focusedTextSnapshot,
                 expectedText: text,
                 timeoutMicros: restoreDelayMicros
@@ -540,7 +551,7 @@ final class TypingService {
             // Avoid clobbering user clipboard changes that happened after our insertion.
             if pasteboard.changeCount == temporaryChangeCount || pasteboard.string(forType: .string) == text {
                 self.restorePasteboardSnapshot(snapshot, to: pasteboard)
-                self.log("[TypingService] Restored previous clipboard snapshot (verified=\(verified))")
+                self.log("[TypingService] Restored previous clipboard snapshot")
             } else {
                 self.log("[TypingService] Skipped clipboard restore because clipboard changed externally")
             }
@@ -895,21 +906,31 @@ final class TypingService {
 
     private func captureFocusedTextSnapshot() -> FocusedTextSnapshot? {
         guard let focusInfo = self.getSystemFocusedElementAndPID() else { return nil }
+        let bundleIdentifier = NSRunningApplication(processIdentifier: focusInfo.pid)?.bundleIdentifier
+        let appScriptSnapshot = self.captureAppScriptTextSnapshot(forBundleIdentifier: bundleIdentifier)
         return FocusedTextSnapshot(
             pid: focusInfo.pid,
+            bundleIdentifier: bundleIdentifier,
             value: self.getElementStringValue(focusInfo.element),
-            selectedRange: self.getSelectedTextRange(focusInfo.element)
+            selectedRange: self.getSelectedTextRange(focusInfo.element),
+            appScriptValue: appScriptSnapshot?.value,
+            appScriptSelectedRange: appScriptSnapshot?.selectedRange
         )
+    }
+
+    private struct AppScriptTextSnapshot {
+        let value: String?
+        let selectedRange: CFRange?
     }
 
     private func waitForFocusedTextVerification(
         from snapshot: FocusedTextSnapshot?,
         expectedText: String,
         timeoutMicros: useconds_t
-    ) -> Bool {
+    ) -> PasteVerificationResult {
         guard let snapshot else {
             usleep(timeoutMicros)
-            return false
+            return .unavailable
         }
 
         let pollMicros: useconds_t = 50_000
@@ -927,11 +948,29 @@ final class TypingService {
                 continue
             }
 
+            if let currentValue = current.appScriptValue,
+               currentValue.contains(expectedText),
+               currentValue != snapshot.appScriptValue
+            {
+                return .appScriptContainsText
+            }
+
+            if let before = snapshot.appScriptSelectedRange,
+               let after = current.appScriptSelectedRange,
+               after.length == 0
+            {
+                let expectedCaretLocation = before.location + expectedLength
+                let caretDelta = abs(after.location - expectedCaretLocation)
+                if caretDelta <= tolerance {
+                    return .appScriptCaretMovedExpectedDistance
+                }
+            }
+
             if let currentValue = current.value,
                currentValue.contains(expectedText),
                currentValue != snapshot.value
             {
-                return true
+                return .fieldContainsText
             }
 
             if let before = snapshot.selectedRange,
@@ -941,12 +980,78 @@ final class TypingService {
                 let expectedCaretLocation = before.location + expectedLength
                 let caretDelta = abs(after.location - expectedCaretLocation)
                 if caretDelta <= tolerance {
-                    return true
+                    return .caretMovedExpectedDistance
                 }
             }
         }
 
-        return false
+        return .timeout
+    }
+
+    private func captureAppScriptTextSnapshot(forBundleIdentifier bundleIdentifier: String?) -> AppScriptTextSnapshot? {
+        switch bundleIdentifier {
+        case "com.apple.dt.Xcode":
+            return self.captureXcodeScriptSnapshot()
+        case "com.apple.Notes":
+            return self.captureNotesScriptSnapshot()
+        default:
+            return nil
+        }
+    }
+
+    private func captureXcodeScriptSnapshot() -> AppScriptTextSnapshot? {
+        guard let value = self.runAppleScript("""
+        tell application "Xcode"
+            if (count of source documents) is 0 then return ""
+            return text of source document 1
+        end tell
+        """) else {
+            return nil
+        }
+
+        let selectedRange = self.runAppleScript("""
+        tell application "Xcode"
+            if (count of source documents) is 0 then return ""
+            return selected character range of source document 1
+        end tell
+        """).flatMap(self.parseAppleScriptRange)
+
+        return AppScriptTextSnapshot(value: value, selectedRange: selectedRange)
+    }
+
+    private func captureNotesScriptSnapshot() -> AppScriptTextSnapshot? {
+        guard let value = self.runAppleScript("""
+        tell application "Notes"
+            set selectedNotes to selection as list
+            if (count of selectedNotes) is 0 then return ""
+            set noteId to id of item 1 of selectedNotes
+            return plaintext of note id noteId
+        end tell
+        """) else {
+            return nil
+        }
+        return AppScriptTextSnapshot(value: value, selectedRange: nil)
+    }
+
+    private func runAppleScript(_ source: String) -> String? {
+        guard let script = NSAppleScript(source: source) else { return nil }
+        var error: NSDictionary?
+        let result = script.executeAndReturnError(&error)
+        if let error {
+            self.log("[TypingService] AppleScript verification failed: \(error)")
+            return nil
+        }
+        return result.stringValue
+    }
+
+    private func parseAppleScriptRange(_ rawValue: String) -> CFRange? {
+        let components = rawValue
+            .split(separator: ",")
+            .compactMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        guard components.count == 2 else { return nil }
+        let start = max(0, components[0] - 1)
+        let end = max(start, components[1] - 1)
+        return CFRange(location: start, length: end - start)
     }
 
     private func insertTextAtCursorUsingSelectedRange(_ element: AXUIElement, _ text: String) -> Bool {

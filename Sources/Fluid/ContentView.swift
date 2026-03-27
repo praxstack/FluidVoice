@@ -1747,6 +1747,10 @@ struct ContentView: View {
             )
         }
 
+        let frontmostApp = NSWorkspace.shared.frontmostApplication
+        let frontmostName = frontmostApp?.localizedName ?? "Unknown"
+        let isFluidFrontmost = frontmostApp?.bundleIdentifier == Bundle.main.bundleIdentifier
+
         // Save to transcription history (transcription mode only, if enabled)
         if shouldPersistOutputs, SettingsStore.shared.saveTranscriptionHistory {
             let appInfo = self.recordingAppInfo ?? self.getCurrentAppInfo()
@@ -1758,8 +1762,13 @@ struct ContentView: View {
             )
         }
 
-        // Copy to clipboard if enabled (happens before typing as a backup)
-        if shouldPersistOutputs, SettingsStore.shared.copyTranscriptionToClipboard {
+        // When FluidVoice itself is frontmost, the bound editor already receives `finalText`.
+        // Avoid re-inserting or overwriting the clipboard in that self-target case.
+        let shouldCopyToClipboard = shouldPersistOutputs &&
+            SettingsStore.shared.copyTranscriptionToClipboard &&
+            !isFluidFrontmost
+
+        if shouldCopyToClipboard {
             ClipboardService.copyToClipboard(finalText)
             AnalyticsService.shared.capture(
                 .outputDelivered,
@@ -1771,10 +1780,7 @@ struct ContentView: View {
         }
 
         var didTypeExternally = false
-        let frontmostApp = NSWorkspace.shared.frontmostApplication
-        let frontmostName = frontmostApp?.localizedName ?? "Unknown"
-        let isFluidFrontmost = frontmostApp?.bundleIdentifier?.contains("fluid") == true
-        let shouldTypeExternally = shouldPersistOutputs && (!isFluidFrontmost || self.isTranscriptionFocused == false)
+        let shouldTypeExternally = shouldPersistOutputs && !isFluidFrontmost
 
         DebugLogger.shared.debug(
             "Typing decision → frontmost: \(frontmostName), fluidFrontmost: \(isFluidFrontmost), editorFocused: \(self.isTranscriptionFocused), willTypeExternally: \(shouldTypeExternally)",
@@ -1920,7 +1926,10 @@ struct ContentView: View {
             )
         }
 
-        if SettingsStore.shared.copyTranscriptionToClipboard {
+        let frontmostApp = NSWorkspace.shared.frontmostApplication
+        let isFluidFrontmost = frontmostApp?.bundleIdentifier == Bundle.main.bundleIdentifier
+
+        if SettingsStore.shared.copyTranscriptionToClipboard, !isFluidFrontmost {
             ClipboardService.copyToClipboard(finalText)
         }
 
@@ -1928,9 +1937,7 @@ struct ContentView: View {
             ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
         NotchContentState.shared.recordingTargetPID = focusedPID
 
-        let frontmostApp = NSWorkspace.shared.frontmostApplication
-        let isFluidFrontmost = frontmostApp?.bundleIdentifier?.contains("fluid") == true
-        let shouldTypeExternally = !isFluidFrontmost || self.isTranscriptionFocused == false
+        let shouldTypeExternally = !isFluidFrontmost
         if shouldTypeExternally {
             await self.restoreFocusToRecordingTarget()
             self.asr.typeTextToActiveField(
