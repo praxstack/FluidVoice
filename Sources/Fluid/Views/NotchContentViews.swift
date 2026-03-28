@@ -351,6 +351,9 @@ struct NotchExpandedView: View {
     }
 
     private var selectedPromptLabel: String {
+        if let overrideName = self.contentState.promptModeOverrideProfileName {
+            return overrideName
+        }
         guard let activePromptMode else { return "N/A" }
         if let profile = self.settings.resolvedPromptProfile(
             for: activePromptMode,
