@@ -58,11 +58,17 @@ struct ContentView: View {
     @EnvironmentObject private var menuBarManager: MenuBarManager
     @ObservedObject private var settings = SettingsStore.shared
 
-    // Computed properties to access shared services from AppServices container
-    // This maintains backward compatibility with the existing code while
-    // removing the duplicate service instances that cause startup crashes.
-    private var asr: ASRService { self.appServices.asr }
-    private var audioObserver: AudioHardwareObserver { self.appServices.audioObserver }
+    /// Computed properties to access shared services from AppServices container
+    /// This maintains backward compatibility with the existing code while
+    /// removing the duplicate service instances that cause startup crashes.
+    private var asr: ASRService {
+        self.appServices.asr
+    }
+
+    private var audioObserver: AudioHardwareObserver {
+        self.appServices.audioObserver
+    }
+
     @Environment(\.theme) private var theme
     @State private var hotkeyManager: GlobalHotkeyManager? = nil
     @State private var hotkeyManagerInitialized: Bool = false
@@ -654,15 +660,11 @@ struct ContentView: View {
             }
         }
         .onDisappear {
-            NotchContentState.shared.onPromptModeSwitchRequested = nil
-            NotchContentState.shared.onOverlayModeSwitchRequested = nil
-            NotchContentState.shared.onReprocessLastRequested = nil
-            NotchContentState.shared.onCopyLastRequested = nil
-            NotchContentState.shared.onUndoLastAIRequested = nil
-            NotchContentState.shared.onToggleAIProcessingRequested = nil
-            NotchContentState.shared.onOpenPreferencesRequested = nil
             Task { await self.asr.stopWithoutTranscription() }
             // Note: Overlay lifecycle is now managed by MenuBarManager
+            // Note: NotchContentState handlers capture self (a struct value copy) and are
+            // intentionally kept alive so the overlay remains fully functional when the
+            // settings window is closed. No retain cycle risk since ContentView is a value type.
 
             // Stop accessibility polling
             self.accessibilityPollingTask?.cancel()
@@ -1200,7 +1202,9 @@ struct ContentView: View {
 
     // MARK: - Model Management Functions
 
-    private func saveModels() { SettingsStore.shared.availableModels = self.availableModels }
+    private func saveModels() {
+        SettingsStore.shared.availableModels = self.availableModels
+    }
 
     // MARK: - Provider Management Functions
 
@@ -2227,7 +2231,7 @@ struct ContentView: View {
         DebugLogger.shared.info("Command processed, conversation stored in Command Mode", source: "ContentView")
     }
 
-    // Capture app context at start to avoid mismatches if the user switches apps mid-session
+    /// Capture app context at start to avoid mismatches if the user switches apps mid-session
     private func startRecording() {
         let model = SettingsStore.shared.selectedSpeechModel
         DebugLogger.shared.info(
