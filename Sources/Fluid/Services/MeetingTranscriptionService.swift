@@ -71,9 +71,14 @@ final class MeetingTranscriptionService: ObservableObject {
     // MARK: - Supported Formats
 
     /// File extensions the OS can actually decode, queried dynamically from AVFoundation.
+    /// Filtered to audio/video types only — excludes subtitles, playlists, etc.
     static let supportedFileExtensions: Set<String> = {
         let avTypes = AVURLAsset.audiovisualTypes()
-        let extensions = avTypes.compactMap { UTType($0.rawValue)?.preferredFilenameExtension }
+        let extensions = avTypes.compactMap { fileType -> String? in
+            guard let utType = UTType(fileType.rawValue) else { return nil }
+            guard utType.conforms(to: .audio) || utType.conforms(to: .movie) else { return nil }
+            return utType.preferredFilenameExtension
+        }
         return Set(extensions)
     }()
 
