@@ -135,7 +135,14 @@ final class ParakeetRealtimeProvider: TranscriptionProvider {
     }
 
     private static func cacheRootDirectory() -> URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let baseDirectory =
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+                "Library/Application Support",
+                isDirectory: true
+            )
+
+        return baseDirectory
             .appendingPathComponent("FluidAudio", isDirectory: true)
             .appendingPathComponent("Models", isDirectory: true)
             .appendingPathComponent("parakeet-eou-streaming", isDirectory: true)
