@@ -204,7 +204,8 @@ final class MeetingTranscriptionService: ObservableObject {
                 DebugLogger.shared.warning("Could not determine audio duration: \(error.localizedDescription)", source: "MeetingTranscriptionService")
             }
 
-            let isVideoContainer = ["mp4", "mov"].contains(fileExtension)
+            let isVideoContainer = UTType(filenameExtension: fileExtension)
+                .map { $0.conforms(to: .movie) } ?? false
 
             if provider.prefersNativeFileTranscription && !isVideoContainer {
                 self.currentStatus = duration > 0 ? "Transcribing audio (\(Int(duration))s)..." : "Transcribing audio..."
