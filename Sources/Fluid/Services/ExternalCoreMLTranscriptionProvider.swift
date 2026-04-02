@@ -15,6 +15,8 @@ final class ExternalCoreMLTranscriptionProvider: TranscriptionProvider {
     private var cohereManager: CohereTranscribeAsrManager?
     private let modelOverride: SettingsStore.SpeechModel?
     private var loadedManifest: ExternalCoreMLManifestIdentity?
+    private var coherePromptTemplate: [Int] = []
+    private var cohereLanguageTokenIDs: [SettingsStore.CohereLanguage: Int] = [:]
 
     init(modelOverride: SettingsStore.SpeechModel? = nil) {
         self.modelOverride = modelOverride
@@ -53,6 +55,7 @@ final class ExternalCoreMLTranscriptionProvider: TranscriptionProvider {
         progressHandler?(0.85)
 
         self.loadedManifest = try spec.loadManifest(at: directory)
+        try self.loadCoherePromptConfigurationIfNeeded(at: directory, backend: spec.backend)
 
         switch spec.backend {
         case .cohereTranscribe:
@@ -100,7 +103,11 @@ final class ExternalCoreMLTranscriptionProvider: TranscriptionProvider {
             throw Self.makeError("External CoreML model is not initialized.")
         }
 
-        let text = try await manager.transcribe(audioSamples: self.paddedSamplesToModelLimit(previewSamples))
+        let promptIDs = self.coherePromptIDsForCurrentLanguage()
+        let text = try await manager.transcribe(
+            audioSamples: self.paddedSamplesToModelLimit(previewSamples),
+            promptIDs: promptIDs.isEmpty ? nil : promptIDs
+        )
         return ASRTranscriptionResult(text: text, confidence: 1.0)
     }
 
@@ -118,7 +125,11 @@ final class ExternalCoreMLTranscriptionProvider: TranscriptionProvider {
             "ExternalCoreML: native file transcription start [file=\(fileURL.lastPathComponent)]",
             source: "ExternalCoreML"
         )
-        let text = try await manager.transcribe(audioFileAt: fileURL)
+        let promptIDs = self.coherePromptIDsForCurrentLanguage()
+        let text = try await manager.transcribe(
+            audioFileAt: fileURL,
+            promptIDs: promptIDs.isEmpty ? nil : promptIDs
+        )
         let elapsed = Date().timeIntervalSince(startedAt)
         DebugLogger.shared.info(
             "ExternalCoreML: native file transcription finished in \(String(format: "%.2f", elapsed))s [chars=\(text.count)]",
@@ -142,7 +153,8 @@ final class ExternalCoreMLTranscriptionProvider: TranscriptionProvider {
             "ExternalCoreML: transcribing \(samples.count) samples [audioSeconds=\(String(format: "%.2f", audioSeconds))]",
             source: "ExternalCoreML"
         )
-        let text = try await self.transcribeByManifestWindow(samples, manager: manager)
+        let promptIDs = self.coherePromptIDsForCurrentLanguage()
+        let text = try await self.transcribeByManifestWindow(samples, manager: manager, promptIDs: promptIDs)
         let elapsed = Date().timeIntervalSince(startedAt)
         let rtf = audioSeconds > 0 ? elapsed / audioSeconds : 0
         DebugLogger.shared.info(
@@ -198,6 +210,8 @@ final class ExternalCoreMLTranscriptionProvider: TranscriptionProvider {
         self.isReady = false
         self.cohereManager = nil
         self.loadedManifest = nil
+        self.coherePromptTemplate = []
+        self.cohereLanguageTokenIDs = [:]
         DebugLogger.shared.info(
             "ExternalCoreML: provider reset after cache clear",
             source: "ExternalCoreML"
@@ -211,6 +225,25 @@ final class ExternalCoreMLTranscriptionProvider: TranscriptionProvider {
         progressHandler: ((Double) -> Void)?
     ) async throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let isManagedDirectory = Self.isAppManagedArtifactsDirectory(directory, spec: spec)
+
+        if spec.validateArtifacts(at: directory) {
+            if isManagedDirectory, self.artifactBundleStampMatches(spec: spec, directory: directory) == false {
+                DebugLogger.shared.warning(
+                    "ExternalCoreML: refreshing managed artifacts for \(directory.lastPathComponent) due to outdated bundle stamp",
+                    source: "ExternalCoreML"
+                )
+                try FileManager.default.removeItem(at: directory)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            } else {
+                DebugLogger.shared.info(
+                    "ExternalCoreML: artifact validation passed for \(directory.lastPathComponent)",
+                    source: "ExternalCoreML"
+                )
+                progressHandler?(0.8)
+                return
+            }
+        }
 
         if spec.validateArtifacts(at: directory) {
             DebugLogger.shared.info(
@@ -250,6 +283,9 @@ final class ExternalCoreMLTranscriptionProvider: TranscriptionProvider {
             throw Self.makeError(error.localizedDescription)
         }
 
+        if isManagedDirectory {
+            self.persistArtifactBundleStamp(spec: spec, directory: directory)
+        }
         SettingsStore.shared.setExternalCoreMLArtifactsDirectory(directory, for: model)
     }
 
@@ -274,6 +310,26 @@ final class ExternalCoreMLTranscriptionProvider: TranscriptionProvider {
             code: -1,
             userInfo: [NSLocalizedDescriptionKey: description]
         )
+    }
+
+    private func artifactBundleStampMatches(spec: ExternalCoreMLASRModelSpec, directory: URL) -> Bool {
+        let stampURL = Self.artifactBundleStampURL(for: directory)
+        guard
+            let currentStamp = try? String(contentsOf: stampURL, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        else {
+            return false
+        }
+        return currentStamp == spec.artifactBundleVersion
+    }
+
+    private func persistArtifactBundleStamp(spec: ExternalCoreMLASRModelSpec, directory: URL) {
+        let stampURL = Self.artifactBundleStampURL(for: directory)
+        try? spec.artifactBundleVersion.write(to: stampURL, atomically: true, encoding: .utf8)
+    }
+
+    private static func artifactBundleStampURL(for directory: URL) -> URL {
+        directory.appendingPathComponent(".fluid_artifact_bundle_version", isDirectory: false)
     }
 
     private func invalidateCompiledCohereCacheIfNeeded(at directory: URL) throws {
@@ -318,6 +374,46 @@ final class ExternalCoreMLTranscriptionProvider: TranscriptionProvider {
         ].joined(separator: "|")
     }
 
+    private func loadCoherePromptConfigurationIfNeeded(at directory: URL, backend: ExternalCoreMLASRBackend) throws {
+        guard backend == .cohereTranscribe else { return }
+
+        let manifestURL = directory.appendingPathComponent("coreml_manifest.json", isDirectory: false)
+        let data = try Data(contentsOf: manifestURL)
+        guard
+            let rawManifest = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let rawPromptIDs = rawManifest["prompt_ids"] as? [Any],
+            let idToToken = rawManifest["id_to_token"] as? [String]
+        else {
+            return
+        }
+        let promptIDs = rawPromptIDs.compactMap { ($0 as? NSNumber)?.intValue }
+        guard promptIDs.count == rawPromptIDs.count else { return }
+
+        let tokenToID = Dictionary(uniqueKeysWithValues: idToToken.enumerated().map { ($0.element, $0.offset) })
+        self.coherePromptTemplate = promptIDs
+        self.cohereLanguageTokenIDs = Dictionary(
+            uniqueKeysWithValues: SettingsStore.CohereLanguage.allCases.compactMap { language in
+                tokenToID[language.tokenString].map { (language, $0) }
+            }
+        )
+    }
+
+    private func coherePromptIDsForCurrentLanguage() -> [Int] {
+        let promptTemplate = self.coherePromptTemplate
+        guard promptTemplate.isEmpty == false else { return [] }
+
+        let languageTokenIDs = self.cohereLanguageTokenIDs
+        guard languageTokenIDs.isEmpty == false else { return promptTemplate }
+
+        let targetLanguage = SettingsStore.shared.selectedCohereLanguage
+        guard let targetTokenID = languageTokenIDs[targetLanguage] else { return promptTemplate }
+
+        let supportedTokenIDs = Set(languageTokenIDs.values)
+        return promptTemplate.map { tokenID in
+            supportedTokenIDs.contains(tokenID) ? targetTokenID : tokenID
+        }
+    }
+
     private func previewSamples(for samples: [Float]) -> [Float] {
         let sampleRate = self.loadedManifest?.sampleRate
             ?? (self.modelOverride ?? SettingsStore.shared.selectedSpeechModel).externalCoreMLSpec?.expectedSampleRate
@@ -329,15 +425,23 @@ final class ExternalCoreMLTranscriptionProvider: TranscriptionProvider {
 
     private func transcribeByManifestWindow(
         _ samples: [Float],
-        manager: CohereTranscribeAsrManager
+        manager: CohereTranscribeAsrManager,
+        promptIDs: [Int]
     ) async throws -> String {
+        let runtimePromptIDs = promptIDs.isEmpty ? nil : promptIDs
         let maxAudioSamples = self.loadedManifest?.maxAudioSamples ?? 0
         guard maxAudioSamples > 0 else {
-            return try await manager.transcribe(audioSamples: samples)
+            return try await manager.transcribe(
+                audioSamples: samples,
+                promptIDs: runtimePromptIDs
+            )
         }
 
         if samples.count <= maxAudioSamples {
-            return try await manager.transcribe(audioSamples: self.paddedSamplesToModelLimit(samples))
+            return try await manager.transcribe(
+                audioSamples: self.paddedSamplesToModelLimit(samples),
+                promptIDs: runtimePromptIDs
+            )
         }
 
         let overlapSamples = min(self.loadedManifest?.overlapSamples ?? 0, maxAudioSamples / 2)
@@ -348,7 +452,10 @@ final class ExternalCoreMLTranscriptionProvider: TranscriptionProvider {
         while startIndex < samples.count {
             let endIndex = min(startIndex + maxAudioSamples, samples.count)
             let chunk = Array(samples[startIndex..<endIndex])
-            let text = try await manager.transcribe(audioSamples: self.paddedSamplesToModelLimit(chunk))
+            let text = try await manager.transcribe(
+                audioSamples: self.paddedSamplesToModelLimit(chunk),
+                promptIDs: runtimePromptIDs
+            )
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty == false {
                 chunkTexts.append(trimmed)

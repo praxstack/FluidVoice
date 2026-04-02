@@ -206,7 +206,7 @@ final class VoiceEngineSettingsViewModel: ObservableObject {
         case .qwen3Asr:
             return "Qwen3 ASR is a multilingual FluidAudio model with strong quality, but higher memory usage. Requires macOS 15+."
         case .cohereTranscribeSixBit:
-            return "Cohere Transcribe downloads a CoreML pipeline from Hugging Face and caches it locally. Best on Apple Silicon with 8GB+ RAM."
+            return "Cohere Transcribe downloads a CoreML pipeline from Hugging Face and caches it locally. Select the language manually before dictation. Best on Apple Silicon with 8GB+ RAM."
         default:
             return "Whisper models support 99 languages and work on any Mac."
         }
