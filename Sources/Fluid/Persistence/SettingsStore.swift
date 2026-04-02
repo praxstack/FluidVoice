@@ -2359,7 +2359,7 @@ final class SettingsStore: ObservableObject {
             case .parakeetTDTv2: return "Parakeet TDT v2 (English Only)"
             case .parakeetRealtime: return "Parakeet Flash (Beta)"
             case .qwen3Asr: return "Qwen3 ASR (Beta)"
-            case .cohereTranscribeSixBit: return "Cohere Transcribe 6-bit"
+            case .cohereTranscribeSixBit: return "Cohere Transcribe"
             case .appleSpeech: return "Apple ASR Legacy"
             case .appleSpeechAnalyzer: return "Apple Speech - macOS 26+"
             case .whisperTiny: return "Whisper Tiny"
@@ -2378,7 +2378,7 @@ final class SettingsStore: ObservableObject {
             case .parakeetTDTv2: return "English Only (Higher Accuracy)"
             case .parakeetRealtime: return "English Only (Live Streaming)"
             case .qwen3Asr: return "30 Languages"
-            case .cohereTranscribeSixBit: return "14 Languages"
+            case .cohereTranscribeSixBit: return "14 Languages (Select Manually)"
             case .appleSpeech: return "System Languages"
             case .appleSpeechAnalyzer: return "EN, ES, FR, DE, IT, JA, KO, PT, ZH"
             case .whisperTiny, .whisperBase, .whisperSmall, .whisperMedium, .whisperLargeTurbo, .whisperLarge:
@@ -2532,7 +2532,7 @@ final class SettingsStore: ObservableObject {
             case .qwen3Asr:
                 return "Qwen3 multilingual ASR via FluidAudio. Higher quality, heavier memory footprint."
             case .cohereTranscribeSixBit:
-                return "High-accuracy multilingual transcription. Supports English, French, German, Italian, Spanish, Portuguese, Greek, Dutch, Polish, Mandarin, Japanese, Korean, Vietnamese, and Arabic."
+                return "High-accuracy multilingual transcription. Select the language manually before dictation for best results."
             case .appleSpeech:
                 return "Built-in macOS speech recognition. No download required."
             case .appleSpeechAnalyzer:
@@ -2999,6 +2999,7 @@ private extension SettingsStore {
 
         // Unified Speech Model (replaces above two)
         static let selectedSpeechModel = "SelectedSpeechModel"
+        static let selectedCohereLanguage = "SelectedCohereLanguage"
         static let externalCoreMLArtifactsDirectories = "ExternalCoreMLArtifactsDirectories"
 
         // Overlay Position
@@ -3130,7 +3131,7 @@ extension SettingsStore.SpeechModel {
         case .parakeetRealtime:
             return "EN"
         case .cohereTranscribeSixBit:
-            return "14 Languages"
+            return "AR, DE, EL, EN, ES, FR, IT, JA, KO, NL, PL, PT, VI, ZH"
         case .appleSpeechAnalyzer:
             return "EN, ES, FR, DE, IT, JA, KO, PT, ZH"
         default:
@@ -3144,6 +3145,8 @@ extension SettingsStore.SpeechModel {
             return """
             Bulgarian, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French, German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Slovak, Slovenian, Spanish, Swedish, Russian, and Ukrainian
             """
+        case .cohereTranscribeSixBit:
+            return "Arabic, German, Greek, English, Spanish, French, Italian, Japanese, Korean, Dutch, Polish, Portuguese, Vietnamese, and Mandarin Chinese"
         default:
             return nil
         }
@@ -3151,6 +3154,46 @@ extension SettingsStore.SpeechModel {
 }
 
 extension SettingsStore {
+    enum CohereLanguage: String, CaseIterable, Identifiable, Codable {
+        case arabic = "ar"
+        case german = "de"
+        case greek = "el"
+        case english = "en"
+        case spanish = "es"
+        case french = "fr"
+        case italian = "it"
+        case japanese = "ja"
+        case korean = "ko"
+        case dutch = "nl"
+        case polish = "pl"
+        case portuguese = "pt"
+        case vietnamese = "vi"
+        case mandarinChinese = "zh"
+
+        var id: String { self.rawValue }
+
+        var displayName: String {
+            switch self {
+            case .arabic: return "Arabic"
+            case .german: return "German"
+            case .greek: return "Greek"
+            case .english: return "English"
+            case .spanish: return "Spanish"
+            case .french: return "French"
+            case .italian: return "Italian"
+            case .japanese: return "Japanese"
+            case .korean: return "Korean"
+            case .dutch: return "Dutch"
+            case .polish: return "Polish"
+            case .portuguese: return "Portuguese"
+            case .vietnamese: return "Vietnamese"
+            case .mandarinChinese: return "Mandarin Chinese"
+            }
+        }
+
+        var tokenString: String { "<|\(self.rawValue)|>" }
+    }
+
     // MARK: - Unified Speech Model Selection
 
     /// The selected speech recognition model.
@@ -3184,6 +3227,21 @@ extension SettingsStore {
         set {
             objectWillChange.send()
             self.defaults.set(newValue.rawValue, forKey: Keys.selectedSpeechModel)
+        }
+    }
+
+    var selectedCohereLanguage: CohereLanguage {
+        get {
+            if let rawValue = self.defaults.string(forKey: Keys.selectedCohereLanguage),
+               let language = CohereLanguage(rawValue: rawValue)
+            {
+                return language
+            }
+            return .english
+        }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue.rawValue, forKey: Keys.selectedCohereLanguage)
         }
     }
 

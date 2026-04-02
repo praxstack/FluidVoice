@@ -270,44 +270,39 @@ extension VoiceEngineSettingsView {
                 .animation(.spring(response: 0.5, dampingFraction: 0.7), value: model.id)
             }
 
-            if model.requiresExternalArtifacts {
+            if model == .cohereTranscribeSixBit {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .center, spacing: 10) {
-                        Image(systemName: "arrow.down.circle")
+                        Image(systemName: "globe")
                             .font(.caption)
                             .foregroundStyle(self.theme.palette.accent)
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Hosted on Hugging Face")
+                            Text("Select Language Manually")
                                 .font(.caption)
                                 .fontWeight(.semibold)
-                            Text("Downloads automatically on first use and stays cached locally.")
+                            Text("Choose the language token injected into Cohere's transcription prompt.")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
                         }
 
                         Spacer(minLength: 8)
-                    }
 
-                    if model.externalCoreMLSpec?.sourceURL != nil {
-                        HStack(spacing: 10) {
-                            Button {
-                                self.viewModel.openExternalModelSource(for: model)
-                            } label: {
-                                Label("Open Hugging Face", systemImage: "arrow.up.right.square")
-                                    .font(.caption)
+                        Picker("Cohere Language", selection: Binding(
+                            get: { self.settings.selectedCohereLanguage },
+                            set: { newValue in
+                                guard newValue != self.settings.selectedCohereLanguage else { return }
+                                self.settings.selectedCohereLanguage = newValue
                             }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(self.theme.palette.accent)
-
-                            Text("The app downloads the artifacts directly from this repo.")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-
-                            Spacer()
+                        )) {
+                            ForEach(SettingsStore.CohereLanguage.allCases) { language in
+                                Text(language.displayName).tag(language)
+                            }
                         }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .disabled(self.viewModel.asr.isRunning)
                     }
                 }
                 .padding(.horizontal, 10)

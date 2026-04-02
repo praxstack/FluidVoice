@@ -28,6 +28,10 @@ enum ExternalCoreMLArtifactsValidationError: LocalizedError {
     case manifestUnreadable(URL, Error)
     case unexpectedModelID(expected: String, actual: String)
     case unexpectedSampleRate(expected: Int, actual: Int)
+    case invalidMaxAudioSeconds(Double)
+    case invalidMaxAudioSamples(Int)
+    case inconsistentAudioWindow(samples: Int, seconds: Double, sampleRate: Int)
+    case invalidOverlapSamples(Int, maxAudioSamples: Int)
 
     var errorDescription: String? {
         switch self {
@@ -41,6 +45,14 @@ enum ExternalCoreMLArtifactsValidationError: LocalizedError {
             return "Unexpected model_id '\(actual)'. Expected '\(expected)'."
         case let .unexpectedSampleRate(expected, actual):
             return "Unexpected sample rate \(actual). Expected \(expected)."
+        case let .invalidMaxAudioSeconds(seconds):
+            return "Invalid max_audio_seconds \(seconds)."
+        case let .invalidMaxAudioSamples(samples):
+            return "Invalid max_audio_samples \(samples)."
+        case let .inconsistentAudioWindow(samples, seconds, sampleRate):
+            return "Manifest audio window is inconsistent: \(samples) samples vs \(seconds)s at \(sampleRate) Hz."
+        case let .invalidOverlapSamples(overlapSamples, maxAudioSamples):
+            return "Invalid overlap_samples \(overlapSamples) for max_audio_samples \(maxAudioSamples)."
         }
     }
 }
@@ -61,6 +73,8 @@ struct ExternalCoreMLASRModelSpec {
     let repositoryOwner: String?
     let repositoryName: String?
     let repositoryRevision: String
+    let artifactBundleVersion: String
+    private let maximumAudioWindowSeconds: Double = 60
 
     var requiredEntries: [String] {
         [
@@ -129,6 +143,33 @@ struct ExternalCoreMLASRModelSpec {
                 actual: manifest.sampleRate
             )
         }
+
+        guard manifest.maxAudioSeconds > 0, manifest.maxAudioSeconds <= self.maximumAudioWindowSeconds else {
+            throw ExternalCoreMLArtifactsValidationError.invalidMaxAudioSeconds(manifest.maxAudioSeconds)
+        }
+
+        let maximumAudioSamples = Int((Double(self.expectedSampleRate) * self.maximumAudioWindowSeconds).rounded())
+        guard manifest.maxAudioSamples > 0, manifest.maxAudioSamples <= maximumAudioSamples else {
+            throw ExternalCoreMLArtifactsValidationError.invalidMaxAudioSamples(manifest.maxAudioSamples)
+        }
+
+        let expectedSamples = Int((manifest.maxAudioSeconds * Double(manifest.sampleRate)).rounded())
+        guard abs(expectedSamples - manifest.maxAudioSamples) <= 1 else {
+            throw ExternalCoreMLArtifactsValidationError.inconsistentAudioWindow(
+                samples: manifest.maxAudioSamples,
+                seconds: manifest.maxAudioSeconds,
+                sampleRate: manifest.sampleRate
+            )
+        }
+
+        if let overlapSamples = manifest.overlapSamples {
+            guard overlapSamples >= 0, overlapSamples < manifest.maxAudioSamples else {
+                throw ExternalCoreMLArtifactsValidationError.invalidOverlapSamples(
+                    overlapSamples,
+                    maxAudioSamples: manifest.maxAudioSamples
+                )
+            }
+        }
     }
 }
 
@@ -151,7 +192,8 @@ enum ExternalCoreMLModelRegistry {
                 sourceURL: URL(string: "https://huggingface.co/BarathwajAnandan/cohere-transcribe-03-2026-CoreML-6bit"),
                 repositoryOwner: "BarathwajAnandan",
                 repositoryName: "cohere-transcribe-03-2026-CoreML-6bit",
-                repositoryRevision: "main"
+                repositoryRevision: "main",
+                artifactBundleVersion: "2026-04-02-cohere-refresh-1"
             )
         default:
             return nil
