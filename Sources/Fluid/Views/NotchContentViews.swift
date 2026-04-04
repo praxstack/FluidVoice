@@ -550,7 +550,7 @@ struct NotchExpandedView: View {
             if !self.contentState.isProcessing {
                 ZStack(alignment: .top) {
                     HStack(spacing: 6) {
-                        Text("Prompt:")
+                        Text("AI:")
                             .font(.system(size: 9, weight: .medium))
                             .foregroundStyle(.white.opacity(0.5))
                         Text(self.selectedPromptLabel)

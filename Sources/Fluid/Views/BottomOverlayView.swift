@@ -2086,13 +2086,11 @@ struct BottomOverlayView: View {
 
     private var promptSelectorTrigger: some View {
         HStack(spacing: 5) {
-            if !self.isCompactControls {
-                Text("Prompt:")
-                    .font(.system(size: self.promptSelectorFontSize, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-            }
+            Text("AI:")
+                .font(.system(size: self.promptSelectorFontSize, weight: .medium))
+                .foregroundStyle(.white.opacity(0.5))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
             Text(self.promptSelectorDisplayLabel)
                 .font(.system(size: self.promptSelectorLabelFontSize, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.75))
