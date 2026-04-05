@@ -573,6 +573,10 @@ struct SettingsView: View {
                                         .font(.subheadline.weight(.medium))
                                         .foregroundStyle(.secondary)
 
+                                    Text("Changes usually apply immediately. If a new shortcut does not respond, restart FluidVoice.")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+
                                     self.shortcutRow(
                                         icon: "mic.fill",
                                         iconColor: .secondary,
