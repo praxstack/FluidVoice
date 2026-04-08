@@ -3626,16 +3626,16 @@ extension SettingsStore {
         var displayName: String {
             switch self {
             case .standard:
-                return "Experimental Direct Typing"
+                return "Clipboard Free Insert"
             case .reliablePaste:
-                return "Reliable Paste"
+                return "Clipboard Paste"
             }
         }
 
         var description: String {
             switch self {
             case .standard:
-                return "Tries to avoid clipboard changes by typing directly when possible. Usually a bit slower, and may fail or behave inconsistently in some apps."
+                return "Tries to insert text without changing the clipboard. Usually a bit slower, and may fail or behave inconsistently in some apps."
             case .reliablePaste:
                 return "Usually faster and works best across browsers and desktop apps. Uses a temporary clipboard paste, so clipboard history apps may briefly record dictated text."
             }

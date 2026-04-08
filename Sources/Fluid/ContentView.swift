@@ -29,6 +29,38 @@ enum SidebarItem: Hashable {
     case rewriteMode
 }
 
+enum ShortcutRecordingTarget: String, Hashable {
+    case primaryDictation
+    case secondaryDictation
+    case command
+    case edit
+    case cancel
+
+    var title: String {
+        switch self {
+        case .primaryDictation:
+            return "Primary Dictation Shortcut"
+        case .secondaryDictation:
+            return "Secondary Dictation Shortcut"
+        case .command:
+            return "Command Mode"
+        case .edit:
+            return "Edit Mode"
+        case .cancel:
+            return "Cancel Recording"
+        }
+    }
+
+    var enablesFeatureOnAssignment: Bool {
+        switch self {
+        case .secondaryDictation, .command, .edit:
+            return true
+        case .primaryDictation, .cancel:
+            return false
+        }
+    }
+}
+
 // MARK: - Minimal FluidAudio ASR Service (finalized text, macOS)
 
 // MARK: - Saved Provider Model
@@ -89,11 +121,9 @@ struct ContentView: View {
     @State private var promptModeOverrideText: String? // System prompt text to use when in prompt mode
     @State private var activeDictationShortcutSlot: SettingsStore.DictationShortcutSlot? = nil
     @State private var activeRecordingMode: ActiveRecordingMode = .none
-    @State private var isRecordingShortcut = false
-    @State private var isRecordingPromptModeShortcut = false
-    @State private var isRecordingCommandModeShortcut = false
-    @State private var isRecordingRewriteShortcut = false
-    @State private var isRecordingCancelShortcut = false
+    @State private var activeShortcutRecordingTarget: ShortcutRecordingTarget? = nil
+    @State private var currentRecordingModifierKeyCodes: Set<UInt16> = []
+    @State private var pendingModifierKeyCodes: Set<UInt16> = []
     @State private var pendingModifierFlags: NSEvent.ModifierFlags = []
     @State private var pendingModifierKeyCode: UInt16?
     @State private var pendingModifierOnly = false
@@ -134,6 +164,10 @@ struct ContentView: View {
     private let accessibilityRestartFlagKey = "FluidVoice_AccessibilityRestartPending"
     private let hasAutoRestartedForAccessibilityKey = "FluidVoice_HasAutoRestartedForAccessibility"
     @State private var accessibilityPollingTask: Task<Void, Never>?
+
+    private var isRecordingAnyShortcutCapture: Bool {
+        self.activeShortcutRecordingTarget != nil
+    }
 
     // MARK: - Voice Recognition Model Management
 
@@ -367,12 +401,8 @@ struct ContentView: View {
 
             NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
                 let eventModifiers = event.modifierFlags.intersection([.function, .command, .option, .control, .shift])
-                let isRecordingAnyShortcut = self.isRecordingShortcut ||
-                    self.isRecordingPromptModeShortcut ||
-                    self.isRecordingCommandModeShortcut ||
-                    self.isRecordingRewriteShortcut ||
-                    self.isRecordingCancelShortcut
-                let recordingTarget = self.currentShortcutRecordingTarget()
+                let isRecordingAnyShortcut = self.isRecordingAnyShortcutCapture
+                let recordingTarget = self.activeShortcutRecordingTarget
 
                 if event.type == .keyDown {
                     guard isRecordingAnyShortcut else {
@@ -387,7 +417,7 @@ struct ContentView: View {
                     }
 
                     let keyCode = event.keyCode
-                    if keyCode == 53 && !self.isRecordingCancelShortcut {
+                    if keyCode == 53 && recordingTarget != .cancel {
                         DebugLogger.shared.debug("NSEvent monitor: Escape pressed, cancelling shortcut recording", source: "ContentView")
                         self.clearShortcutRecordingMode()
                         return nil
@@ -420,9 +450,15 @@ struct ContentView: View {
                         return event
                     }
 
+                    let changedModifierFlag = HotkeyShortcut.modifierFlag(forKeyCode: event.keyCode)
+
                     if eventModifiers.isEmpty {
                         if self.pendingModifierOnly, let modifierKeyCode = pendingModifierKeyCode {
-                            let newShortcut = HotkeyShortcut(keyCode: modifierKeyCode, modifierFlags: [])
+                            let newShortcut = HotkeyShortcut(
+                                keyCode: modifierKeyCode,
+                                modifierFlags: self.pendingModifierFlags,
+                                modifierKeyCodes: Array(self.pendingModifierKeyCodes)
+                            )
                             DebugLogger.shared.debug("NSEvent monitor: Recording modifier-only shortcut: \(newShortcut.displayString)", source: "ContentView")
 
                             if let recordingTarget,
@@ -448,24 +484,22 @@ struct ContentView: View {
                         return nil
                     }
 
-                    // Modifiers are currently pressed
-                    var actualKeyCode = event.keyCode
-                    if eventModifiers.contains(.function) {
-                        actualKeyCode = 63 // fn key
-                    } else if eventModifiers.contains(.command) {
-                        actualKeyCode = (event.keyCode == 55) ? 55 : 54 // 55 = left cmd, 54 = right cmd
-                    } else if eventModifiers.contains(.option) {
-                        actualKeyCode = (event.keyCode == 58) ? 58 : 61 // 58 = left opt, 61 = right opt
-                    } else if eventModifiers.contains(.control) {
-                        actualKeyCode = (event.keyCode == 59) ? 59 : 62 // 59 = left ctrl, 62 = right ctrl
-                    } else if eventModifiers.contains(.shift) {
-                        actualKeyCode = (event.keyCode == 56) ? 56 : 60 // 56 = left shift, 60 = right shift
-                    }
+                    // Keep the actual changed modifier key as the trigger key and preserve
+                    // the full pressed modifier set until the combo is finalized.
+                    if let changedModifierFlag {
+                        let isRelease = self.currentRecordingModifierKeyCodes.contains(event.keyCode)
 
-                    self.pendingModifierFlags = eventModifiers
-                    self.pendingModifierKeyCode = actualKeyCode
-                    self.pendingModifierOnly = true
-                    DebugLogger.shared.debug("NSEvent monitor: Modifier key pressed during recording, pending modifiers: \(self.pendingModifierFlags)", source: "ContentView")
+                        if isRelease {
+                            self.currentRecordingModifierKeyCodes.remove(event.keyCode)
+                        } else if eventModifiers.contains(changedModifierFlag) {
+                            self.currentRecordingModifierKeyCodes.insert(event.keyCode)
+                            self.pendingModifierKeyCodes.insert(event.keyCode)
+                            self.pendingModifierFlags = self.pendingModifierFlags.union(eventModifiers)
+                            self.pendingModifierKeyCode = event.keyCode
+                            self.pendingModifierOnly = true
+                            DebugLogger.shared.debug("NSEvent monitor: Modifier key pressed during recording, pending modifiers: \(self.pendingModifierFlags)", source: "ContentView")
+                        }
+                    }
                     return nil
                 }
 
@@ -487,12 +521,17 @@ struct ContentView: View {
         .onChange(of: self.selectedProviderID) { _, newValue in
             SettingsStore.shared.selectedProviderID = newValue
         }
+        .onChange(of: self.activeShortcutRecordingTarget) { _, _ in
+            self.hotkeyManager?.resetModifierOnlyShortcutTracking()
+        }
         .onChange(of: self.isPromptModeShortcutEnabled) { newValue in
             SettingsStore.shared.promptModeShortcutEnabled = newValue
             self.hotkeyManager?.updatePromptModeShortcutEnabled(newValue)
 
             if !newValue {
-                self.isRecordingPromptModeShortcut = false
+                if self.activeShortcutRecordingTarget == .secondaryDictation {
+                    self.clearShortcutRecordingMode()
+                }
 
                 if self.activeRecordingMode == .promptMode {
                     if self.asr.isRunning {
@@ -508,7 +547,9 @@ struct ContentView: View {
             self.hotkeyManager?.updateCommandModeShortcutEnabled(newValue)
 
             if !newValue {
-                self.isRecordingCommandModeShortcut = false
+                if self.activeShortcutRecordingTarget == .command {
+                    self.clearShortcutRecordingMode()
+                }
 
                 if self.activeRecordingMode == .command {
                     if self.asr.isRunning {
@@ -524,7 +565,9 @@ struct ContentView: View {
             self.hotkeyManager?.updateRewriteModeShortcutEnabled(newValue)
 
             if !newValue {
-                self.isRecordingRewriteShortcut = false
+                if self.activeShortcutRecordingTarget == .edit {
+                    self.clearShortcutRecordingMode()
+                }
 
                 if self.activeRecordingMode == .edit {
                     if self.asr.isRunning {
@@ -738,40 +781,25 @@ struct ContentView: View {
     }
 
     private func resetPendingShortcutState() {
+        self.currentRecordingModifierKeyCodes = []
+        self.pendingModifierKeyCodes = []
         self.pendingModifierFlags = []
         self.pendingModifierKeyCode = nil
         self.pendingModifierOnly = false
     }
 
-    private enum ShortcutRecordingTarget {
-        case primaryDictation
-        case secondaryDictation
-        case command
-        case edit
-        case cancel
-    }
-
-    private func currentShortcutRecordingTarget() -> ShortcutRecordingTarget? {
-        if self.isRecordingShortcut { return .primaryDictation }
-        if self.isRecordingPromptModeShortcut { return .secondaryDictation }
-        if self.isRecordingCommandModeShortcut { return .command }
-        if self.isRecordingRewriteShortcut { return .edit }
-        if self.isRecordingCancelShortcut { return .cancel }
-        return nil
-    }
-
     private func shortcutConflictMessage(for shortcut: HotkeyShortcut, target: ShortcutRecordingTarget) -> String? {
-        let configuredShortcuts: [(ShortcutRecordingTarget, String, HotkeyShortcut)] = [
-            (.primaryDictation, "Primary Dictation Shortcut", self.hotkeyShortcut),
-            (.secondaryDictation, "Secondary Dictation Shortcut", self.promptModeHotkeyShortcut),
-            (.command, "Command Mode", self.commandModeHotkeyShortcut),
-            (.edit, "Edit Mode", self.rewriteModeHotkeyShortcut),
-            (.cancel, "Cancel Recording", self.cancelRecordingHotkeyShortcut),
+        let configuredShortcuts: [(ShortcutRecordingTarget, HotkeyShortcut)] = [
+            (.primaryDictation, self.hotkeyShortcut),
+            (.secondaryDictation, self.promptModeHotkeyShortcut),
+            (.command, self.commandModeHotkeyShortcut),
+            (.edit, self.rewriteModeHotkeyShortcut),
+            (.cancel, self.cancelRecordingHotkeyShortcut),
         ]
 
-        for (otherTarget, title, configuredShortcut) in configuredShortcuts where otherTarget != target {
+        for (otherTarget, configuredShortcut) in configuredShortcuts where otherTarget != target {
             if configuredShortcut == shortcut {
-                return "Duplicate with \(title)"
+                return "Duplicate with \(otherTarget.title)"
             }
         }
 
@@ -779,40 +807,66 @@ struct ContentView: View {
     }
 
     private func assignRecordedShortcut(_ shortcut: HotkeyShortcut, to target: ShortcutRecordingTarget) {
+        self.applyRecordedShortcut(shortcut, to: target)
+        if target.enablesFeatureOnAssignment {
+            self.setShortcutTargetEnabled(true, for: target)
+        }
+        self.setShortcutRecording(false, for: target)
+    }
+
+    private func applyRecordedShortcut(_ shortcut: HotkeyShortcut, to target: ShortcutRecordingTarget) {
         switch target {
         case .primaryDictation:
             self.hotkeyShortcut = shortcut
             SettingsStore.shared.hotkeyShortcut = shortcut
             self.hotkeyManager?.updateShortcut(shortcut)
-            self.isRecordingShortcut = false
         case .secondaryDictation:
             self.promptModeHotkeyShortcut = shortcut
             SettingsStore.shared.promptModeHotkeyShortcut = shortcut
             self.hotkeyManager?.updatePromptModeShortcut(shortcut)
-            self.isRecordingPromptModeShortcut = false
         case .command:
             self.commandModeHotkeyShortcut = shortcut
             SettingsStore.shared.commandModeHotkeyShortcut = shortcut
             self.hotkeyManager?.updateCommandModeShortcut(shortcut)
-            self.isRecordingCommandModeShortcut = false
         case .edit:
             self.rewriteModeHotkeyShortcut = shortcut
             SettingsStore.shared.rewriteModeHotkeyShortcut = shortcut
             self.hotkeyManager?.updateRewriteModeShortcut(shortcut)
-            self.isRecordingRewriteShortcut = false
         case .cancel:
             self.cancelRecordingHotkeyShortcut = shortcut
             SettingsStore.shared.cancelRecordingHotkeyShortcut = shortcut
-            self.isRecordingCancelShortcut = false
+        }
+    }
+
+    private func setShortcutTargetEnabled(_ enabled: Bool, for target: ShortcutRecordingTarget) {
+        switch target {
+        case .secondaryDictation:
+            self.isPromptModeShortcutEnabled = enabled
+            SettingsStore.shared.promptModeShortcutEnabled = enabled
+            self.hotkeyManager?.updatePromptModeShortcutEnabled(enabled)
+        case .command:
+            self.isCommandModeShortcutEnabled = enabled
+            SettingsStore.shared.commandModeShortcutEnabled = enabled
+            self.hotkeyManager?.updateCommandModeShortcutEnabled(enabled)
+        case .edit:
+            self.isRewriteModeShortcutEnabled = enabled
+            SettingsStore.shared.rewriteModeShortcutEnabled = enabled
+            self.hotkeyManager?.updateRewriteModeShortcutEnabled(enabled)
+        case .primaryDictation, .cancel:
+            break
+        }
+    }
+
+    private func setShortcutRecording(_ isRecording: Bool, for target: ShortcutRecordingTarget) {
+        if isRecording {
+            self.activeShortcutRecordingTarget = target
+        } else if self.activeShortcutRecordingTarget == target {
+            self.activeShortcutRecordingTarget = nil
         }
     }
 
     private func clearShortcutRecordingMode() {
-        self.isRecordingShortcut = false
-        self.isRecordingPromptModeShortcut = false
-        self.isRecordingCommandModeShortcut = false
-        self.isRecordingRewriteShortcut = false
-        self.isRecordingCancelShortcut = false
+        self.activeShortcutRecordingTarget = nil
         self.shortcutRecordingMessage = nil
         self.resetPendingShortcutState()
     }
@@ -1157,17 +1211,13 @@ struct ContentView: View {
             outputDevices: self.$outputDevices,
             accessibilityEnabled: self.$accessibilityEnabled,
             hotkeyShortcut: self.$hotkeyShortcut,
-            isRecordingShortcut: self.$isRecordingShortcut,
+            activeShortcutRecordingTarget: self.$activeShortcutRecordingTarget,
             shortcutRecordingMessage: self.$shortcutRecordingMessage,
             promptModeShortcut: self.$promptModeHotkeyShortcut,
-            isRecordingPromptModeShortcut: self.$isRecordingPromptModeShortcut,
             promptModeShortcutEnabled: self.$isPromptModeShortcutEnabled,
             commandModeShortcut: self.$commandModeHotkeyShortcut,
-            isRecordingCommandModeShortcut: self.$isRecordingCommandModeShortcut,
             rewriteShortcut: self.$rewriteModeHotkeyShortcut,
-            isRecordingRewriteShortcut: self.$isRecordingRewriteShortcut,
             cancelRecordingShortcut: self.$cancelRecordingHotkeyShortcut,
-            isRecordingCancelShortcut: self.$isRecordingCancelShortcut,
             commandModeShortcutEnabled: self.$isCommandModeShortcutEnabled,
             rewriteShortcutEnabled: self.$isRewriteModeShortcutEnabled,
             hotkeyManagerInitialized: self.$hotkeyManagerInitialized,
@@ -2511,11 +2561,7 @@ struct ContentView: View {
                 self.activeRecordingMode == .edit
             },
             isShortcutCaptureActiveProvider: {
-                self.isRecordingShortcut ||
-                    self.isRecordingPromptModeShortcut ||
-                    self.isRecordingCommandModeShortcut ||
-                    self.isRecordingRewriteShortcut ||
-                    self.isRecordingCancelShortcut
+                self.isRecordingAnyShortcutCapture
             }
         )
 

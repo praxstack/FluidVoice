@@ -4,9 +4,16 @@ import Foundation
 struct HotkeyShortcut: Codable, Equatable {
     var keyCode: UInt16
     var modifierFlags: NSEvent.ModifierFlags
-    enum CodingKeys: String, CodingKey { case keyCode, modifierFlagsRawValue }
+    var modifierKeyCodes: [UInt16]
+    enum CodingKeys: String, CodingKey { case keyCode, modifierFlagsRawValue, modifierKeyCodes }
 
     var displayString: String {
+        let modifierKeyCodes = self.normalizedModifierKeyCodes
+        let modifierParts = modifierKeyCodes.compactMap(Self.keyCodeToString)
+        if !modifierParts.isEmpty {
+            return modifierParts.joined(separator: " + ")
+        }
+
         var parts: [String] = []
         if self.modifierFlags.contains(.function) { parts.append("🌐") }
         if self.modifierFlags.contains(.command) { parts.append("⌘") }
@@ -96,29 +103,135 @@ struct HotkeyShortcut: Codable, Equatable {
         default: return nil
         }
     }
+
+    init(keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags, modifierKeyCodes: [UInt16] = []) {
+        let normalizedModifierKeyCodes = Self.normalizedModifierKeyCodes(from: modifierKeyCodes)
+        if !normalizedModifierKeyCodes.isEmpty {
+            self.modifierKeyCodes = normalizedModifierKeyCodes
+            self.keyCode = normalizedModifierKeyCodes.first ?? keyCode
+
+            let combinedFlags = normalizedModifierKeyCodes.reduce(into: NSEvent.ModifierFlags()) { flags, modifierKeyCode in
+                if let flag = Self.modifierFlag(forKeyCode: modifierKeyCode) {
+                    flags.insert(flag)
+                }
+            }
+            if let triggerFlag = Self.modifierFlag(forKeyCode: self.keyCode) {
+                self.modifierFlags = combinedFlags.subtracting(triggerFlag)
+            } else {
+                self.modifierFlags = modifierFlags.intersection(Self.relevantModifierMask)
+            }
+        } else {
+            self.keyCode = keyCode
+            self.modifierFlags = modifierFlags
+            self.modifierKeyCodes = []
+        }
+    }
 }
 
 extension HotkeyShortcut {
-    private static let relevantModifierMask: NSEvent.ModifierFlags = [.function, .command, .option, .control, .shift]
+    static let relevantModifierMask: NSEvent.ModifierFlags = [.function, .command, .option, .control, .shift]
+
+    static func modifierFlag(forKeyCode keyCode: UInt16) -> NSEvent.ModifierFlags? {
+        switch keyCode {
+        case 63:
+            return .function
+        case 54, 55:
+            return .command
+        case 58, 61:
+            return .option
+        case 59, 62:
+            return .control
+        case 56, 60:
+            return .shift
+        default:
+            return nil
+        }
+    }
+
+    private static func modifierSortPriority(forKeyCode keyCode: UInt16) -> Int? {
+        switch keyCode {
+        case 63: return 0
+        case 55: return 1
+        case 54: return 2
+        case 58: return 3
+        case 61: return 4
+        case 59: return 5
+        case 62: return 6
+        case 56: return 7
+        case 60: return 8
+        default: return nil
+        }
+    }
+
+    static func normalizedModifierKeyCodes(from modifierKeyCodes: [UInt16]) -> [UInt16] {
+        let normalized = Array(Set(modifierKeyCodes)).compactMap { keyCode -> (UInt16, Int)? in
+            guard let priority = Self.modifierSortPriority(forKeyCode: keyCode) else { return nil }
+            return (keyCode, priority)
+        }
+        .sorted { lhs, rhs in
+            lhs.1 < rhs.1
+        }
+        .map(\.0)
+
+        return normalized
+    }
 
     var relevantModifierFlags: NSEvent.ModifierFlags {
         self.modifierFlags.intersection(Self.relevantModifierMask)
+    }
+
+    var normalizedModifierKeyCodes: [UInt16] {
+        let normalized = Self.normalizedModifierKeyCodes(from: self.modifierKeyCodes)
+        if !normalized.isEmpty { return normalized }
+
+        if self.modifierTriggerFlag != nil, self.relevantModifierFlags.isEmpty {
+            return [self.keyCode]
+        }
+
+        return []
+    }
+
+    var modifierTriggerFlag: NSEvent.ModifierFlags? {
+        Self.modifierFlag(forKeyCode: self.keyCode)
+    }
+
+    var isModifierOnlyShortcut: Bool {
+        self.modifierTriggerFlag != nil
+    }
+
+    var expectedModifierFlags: NSEvent.ModifierFlags? {
+        guard let triggerFlag = self.modifierTriggerFlag else { return nil }
+        return self.relevantModifierFlags.union(triggerFlag)
     }
 
     func matches(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
         keyCode == self.keyCode && modifiers.intersection(Self.relevantModifierMask) == self.relevantModifierFlags
     }
 
+    static func == (lhs: HotkeyShortcut, rhs: HotkeyShortcut) -> Bool {
+        let lhsModifierKeyCodes = lhs.normalizedModifierKeyCodes
+        let rhsModifierKeyCodes = rhs.normalizedModifierKeyCodes
+        if !lhsModifierKeyCodes.isEmpty, !rhsModifierKeyCodes.isEmpty {
+            return lhsModifierKeyCodes == rhsModifierKeyCodes
+        }
+
+        return lhs.keyCode == rhs.keyCode && lhs.relevantModifierFlags == rhs.relevantModifierFlags
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.keyCode = try c.decode(UInt16.self, forKey: .keyCode)
+        let keyCode = try c.decode(UInt16.self, forKey: .keyCode)
         let raw = try c.decode(UInt.self, forKey: .modifierFlagsRawValue)
-        self.modifierFlags = NSEvent.ModifierFlags(rawValue: raw)
+        let modifierKeyCodes = try c.decodeIfPresent([UInt16].self, forKey: .modifierKeyCodes) ?? []
+        self.init(keyCode: keyCode, modifierFlags: NSEvent.ModifierFlags(rawValue: raw), modifierKeyCodes: modifierKeyCodes)
     }
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(self.keyCode, forKey: .keyCode)
         try c.encode(self.modifierFlags.rawValue, forKey: .modifierFlagsRawValue)
+        if !self.normalizedModifierKeyCodes.isEmpty {
+            try c.encode(self.normalizedModifierKeyCodes, forKey: .modifierKeyCodes)
+        }
     }
 }
