@@ -12,6 +12,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
+    private struct ShortcutRowContent {
+        let icon: String
+        let iconColor: Color
+        let title: String
+        let description: String
+    }
+
     @EnvironmentObject var appServices: AppServices
     private var asr: ASRService {
         self.appServices.asr
@@ -27,17 +34,13 @@ struct SettingsView: View {
     @Binding var outputDevices: [AudioDevice.Device]
     @Binding var accessibilityEnabled: Bool
     @Binding var hotkeyShortcut: HotkeyShortcut
-    @Binding var isRecordingShortcut: Bool
+    @Binding var activeShortcutRecordingTarget: ShortcutRecordingTarget?
     @Binding var shortcutRecordingMessage: String?
     @Binding var promptModeShortcut: HotkeyShortcut
-    @Binding var isRecordingPromptModeShortcut: Bool
     @Binding var promptModeShortcutEnabled: Bool
     @Binding var commandModeShortcut: HotkeyShortcut
-    @Binding var isRecordingCommandModeShortcut: Bool
     @Binding var rewriteShortcut: HotkeyShortcut
-    @Binding var isRecordingRewriteShortcut: Bool
     @Binding var cancelRecordingShortcut: HotkeyShortcut
-    @Binding var isRecordingCancelShortcut: Bool
     @Binding var commandModeShortcutEnabled: Bool
     @Binding var rewriteShortcutEnabled: Bool
     @Binding var hotkeyManagerInitialized: Bool
@@ -67,6 +70,14 @@ struct SettingsView: View {
     let restartApp: () -> Void
     let revealAppInFinder: () -> Void
     let openApplicationsFolder: () -> Void
+
+    private var isRecordingAnyShortcut: Bool {
+        self.activeShortcutRecordingTarget != nil
+    }
+
+    private func isRecording(_ target: ShortcutRecordingTarget) -> Bool {
+        self.activeShortcutRecordingTarget == target
+    }
 
     private var analyticsToggleBinding: Binding<Bool> {
         Binding(
@@ -571,7 +582,7 @@ struct SettingsView: View {
                             Spacer()
 
                             if self.accessibilityEnabled {
-                                if self.isRecordingShortcut || self.isRecordingPromptModeShortcut || self.isRecordingCommandModeShortcut || self.isRecordingRewriteShortcut || self.isRecordingCancelShortcut {
+                                if self.isRecordingAnyShortcut {
                                     Text("Recording…")
                                         .font(.caption.weight(.semibold))
                                         .foregroundStyle(.orange)
@@ -594,7 +605,7 @@ struct SettingsView: View {
 
                         if self.accessibilityEnabled {
                             VStack(alignment: .leading, spacing: 12) {
-                                if self.isRecordingShortcut || self.isRecordingPromptModeShortcut || self.isRecordingCommandModeShortcut || self.isRecordingRewriteShortcut || self.isRecordingCancelShortcut {
+                                if self.isRecordingAnyShortcut {
                                     HStack(spacing: 8) {
                                         Image(systemName: "hand.point.up.left.fill")
                                             .foregroundStyle(.orange)
@@ -625,35 +636,41 @@ struct SettingsView: View {
                                         .foregroundStyle(.tertiary)
 
                                     self.shortcutRow(
-                                        icon: "mic.fill",
-                                        iconColor: .secondary,
-                                        title: "Primary Dictation Shortcut",
-                                        description: "Defaults to raw transcription, but can use Off, Default, or any custom prompt.",
+                                        content: .init(
+                                            icon: "mic.fill",
+                                            iconColor: .secondary,
+                                            title: "Primary Dictation Shortcut",
+                                            description: "Defaults to raw transcription, but can use Off, Default, or any custom prompt."
+                                        ),
                                         shortcut: self.hotkeyShortcut,
-                                        isRecording: self.isRecordingShortcut,
-                                        recordingMessage: self.isRecordingShortcut ? self.shortcutRecordingMessage : nil,
+                                        isRecording: self.isRecording(.primaryDictation),
+                                        isAnyRecordingActive: self.isRecordingAnyShortcut,
+                                        recordingMessage: self.isRecording(.primaryDictation) ? self.shortcutRecordingMessage : nil,
                                         onChangePressed: {
                                             DebugLogger.shared.debug("Starting to record new transcribe shortcut", source: "SettingsView")
                                             self.shortcutRecordingMessage = nil
-                                            self.isRecordingShortcut = true
+                                            self.activeShortcutRecordingTarget = .primaryDictation
                                         }
                                     )
                                     self.dictationPromptPicker(for: .primary)
                                     Divider().opacity(0.2).padding(.vertical, 4)
 
                                     self.shortcutRow(
-                                        icon: "text.bubble.fill",
-                                        iconColor: .secondary,
-                                        title: "Secondary Dictation Shortcut",
-                                        description: "Defaults to Default cleanup, but can use Off, Default, or any custom prompt.",
+                                        content: .init(
+                                            icon: "text.bubble.fill",
+                                            iconColor: .secondary,
+                                            title: "Secondary Dictation Shortcut",
+                                            description: "Defaults to Default cleanup, but can use Off, Default, or any custom prompt."
+                                        ),
                                         shortcut: self.promptModeShortcut,
-                                        isRecording: self.isRecordingPromptModeShortcut,
-                                        recordingMessage: self.isRecordingPromptModeShortcut ? self.shortcutRecordingMessage : nil,
+                                        isRecording: self.isRecording(.secondaryDictation),
+                                        isAnyRecordingActive: self.isRecordingAnyShortcut,
+                                        recordingMessage: self.isRecording(.secondaryDictation) ? self.shortcutRecordingMessage : nil,
                                         isEnabled: self.$promptModeShortcutEnabled,
                                         onChangePressed: {
                                             DebugLogger.shared.debug("Starting to record new prompt mode shortcut", source: "SettingsView")
                                             self.shortcutRecordingMessage = nil
-                                            self.isRecordingPromptModeShortcut = true
+                                            self.activeShortcutRecordingTarget = .secondaryDictation
                                         }
                                     )
 
@@ -664,51 +681,60 @@ struct SettingsView: View {
                                     Divider().opacity(0.2).padding(.vertical, 4)
 
                                     self.shortcutRow(
-                                        icon: "terminal.fill",
-                                        iconColor: .secondary,
-                                        title: "Command Mode",
-                                        description: "Execute voice commands",
+                                        content: .init(
+                                            icon: "terminal.fill",
+                                            iconColor: .secondary,
+                                            title: "Command Mode",
+                                            description: "Execute voice commands"
+                                        ),
                                         shortcut: self.commandModeShortcut,
-                                        isRecording: self.isRecordingCommandModeShortcut,
-                                        recordingMessage: self.isRecordingCommandModeShortcut ? self.shortcutRecordingMessage : nil,
+                                        isRecording: self.isRecording(.command),
+                                        isAnyRecordingActive: self.isRecordingAnyShortcut,
+                                        recordingMessage: self.isRecording(.command) ? self.shortcutRecordingMessage : nil,
                                         isEnabled: self.$commandModeShortcutEnabled,
                                         onChangePressed: {
                                             DebugLogger.shared.debug("Starting to record new command mode shortcut", source: "SettingsView")
                                             self.shortcutRecordingMessage = nil
-                                            self.isRecordingCommandModeShortcut = true
+                                            self.activeShortcutRecordingTarget = .command
                                         }
                                     )
                                     Divider().opacity(0.2).padding(.vertical, 4)
 
                                     self.shortcutRow(
-                                        icon: "pencil.and.outline",
-                                        iconColor: .secondary,
-                                        title: "Edit Mode",
-                                        description: "Select text and speak how to edit, or generate new content",
+                                        content: .init(
+                                            icon: "pencil.and.outline",
+                                            iconColor: .secondary,
+                                            title: "Edit Mode",
+                                            description: "Select text and speak how to edit, or generate new content"
+                                        ),
                                         shortcut: self.rewriteShortcut,
-                                        isRecording: self.isRecordingRewriteShortcut,
-                                        recordingMessage: self.isRecordingRewriteShortcut ? self.shortcutRecordingMessage : nil,
+                                        isRecording: self.isRecording(.edit),
+                                        isAnyRecordingActive: self.isRecordingAnyShortcut,
+                                        recordingMessage: self.isRecording(.edit) ? self.shortcutRecordingMessage : nil,
                                         isEnabled: self.$rewriteShortcutEnabled,
                                         onChangePressed: {
                                             DebugLogger.shared.debug("Starting to record new write mode shortcut", source: "SettingsView")
                                             self.shortcutRecordingMessage = nil
-                                            self.isRecordingRewriteShortcut = true
+                                            self.activeShortcutRecordingTarget = .edit
                                         }
                                     )
                                     Divider().opacity(0.2).padding(.vertical, 4)
 
                                     self.shortcutRow(
-                                        icon: "xmark.circle.fill",
-                                        iconColor: .secondary,
-                                        title: "Cancel Recording",
-                                        description: "Cancel the current recording or dismiss the active recording overlay",
+                                        content: .init(
+                                            icon: "xmark.circle.fill",
+                                            iconColor: .secondary,
+                                            title: "Cancel Recording",
+                                            description: "Cancel the current recording or dismiss the active recording overlay"
+                                        ),
                                         shortcut: self.cancelRecordingShortcut,
-                                        isRecording: self.isRecordingCancelShortcut,
-                                        recordingMessage: self.isRecordingCancelShortcut ? self.shortcutRecordingMessage : nil,
+                                        isRecording: self.isRecording(.cancel),
+                                        isAnyRecordingActive: self.isRecordingAnyShortcut,
+                                        recordingMessage: self.isRecording(.cancel) ? self.shortcutRecordingMessage : nil,
                                         onChangePressed: {
                                             DebugLogger.shared.debug("Starting to record new cancel shortcut", source: "SettingsView")
                                             self.shortcutRecordingMessage = nil
-                                            self.isRecordingCancelShortcut = true
+                                            self.activeShortcutRecordingTarget = .cancel
                                         }
                                     )
                                 }
@@ -1688,12 +1714,10 @@ struct SettingsView: View {
 
     @ViewBuilder
     private func shortcutRow(
-        icon: String,
-        iconColor: Color,
-        title: String,
-        description: String,
+        content: ShortcutRowContent,
         shortcut: HotkeyShortcut,
         isRecording: Bool,
+        isAnyRecordingActive: Bool,
         recordingMessage: String? = nil,
         isEnabled: Binding<Bool>? = nil,
         onChangePressed: @escaping () -> Void
@@ -1702,14 +1726,14 @@ struct SettingsView: View {
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .foregroundStyle(iconColor)
+                Image(systemName: content.icon)
+                    .foregroundStyle(content.iconColor)
                     .frame(width: 20)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
+                    Text(content.title)
                         .font(.body)
-                    Text(description)
+                    Text(content.description)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -1759,7 +1783,7 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(isRecording || !enabledValue)
+                .disabled(isAnyRecordingActive || !enabledValue)
 
                 if isRecording, let recordingMessage, !recordingMessage.isEmpty {
                     Text(recordingMessage)
