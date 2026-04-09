@@ -107,7 +107,6 @@ final class MenuBarManager: NSObject, ObservableObject, NSMenuDelegate {
         // Prevent rapid state changes that could cause cycles
         guard self.overlayVisible != isRunning else { return }
 
-        let delay: DispatchTimeInterval = .milliseconds(30)
         if isRunning {
             // Cancel any pending hide operation
             self.pendingHideOperation?.cancel()
@@ -160,7 +159,7 @@ final class MenuBarManager: NSObject, ObservableObject, NSMenuDelegate {
                 self.pendingShowOperation = nil
             }
             self.pendingShowOperation = showItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: showItem)
+            DispatchQueue.main.async(execute: showItem)
         } else {
             // Cancel any pending show operation
             self.pendingShowOperation?.cancel()
@@ -194,7 +193,7 @@ final class MenuBarManager: NSObject, ObservableObject, NSMenuDelegate {
                 self.pendingHideOperation = nil
             }
             self.pendingHideOperation = hideItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: hideItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30), execute: hideItem)
         }
     }
 

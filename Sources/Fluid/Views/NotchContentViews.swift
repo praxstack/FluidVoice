@@ -414,7 +414,7 @@ struct NotchExpandedView: View {
     }
 
     private var promptSelectorFixedWidth: CGFloat {
-        102
+        90
     }
 
     private var promptMenuWidth: CGFloat {
@@ -425,10 +425,22 @@ struct NotchExpandedView: View {
         4
     }
 
+    private var promptMenuMaxVisibleRows: CGFloat {
+        3
+    }
+
+    private var promptMenuRowHeight: CGFloat {
+        21
+    }
+
+    private var promptMenuListMaxHeight: CGFloat {
+        self.promptMenuRowHeight * self.promptMenuMaxVisibleRows
+    }
+
     private static let notchContentCoordinateSpace = "NotchExpandedContent"
 
     private var notchContentWidth: CGFloat {
-        216
+        184
     }
 
     @ViewBuilder
@@ -437,7 +449,7 @@ struct NotchExpandedView: View {
             Image(nsImage: appIcon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 16, height: 16)
+                .frame(width: 18, height: 18)
                 .clipShape(RoundedRectangle(cornerRadius: 3))
         }
     }
@@ -539,53 +551,65 @@ struct NotchExpandedView: View {
         let promptMode = self.activePromptMode ?? .dictate
         let activeDictationSlot = self.activeDictationShortcutSlot
         return VStack(alignment: .leading, spacing: 2) {
-            let defaultSelected = promptMode.normalized == .dictate
-                ? (self.settings.dictationPromptSelection(for: activeDictationSlot) == .default)
-                : (self.settings.selectedPromptID(for: promptMode) == nil)
+            Text("AI Prompt")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.42))
+                .padding(.horizontal, 6)
+                .padding(.top, 2)
+                .padding(.bottom, 3)
 
-            if promptMode.normalized == .dictate {
-                self.promptMenuRow(
-                    "Off",
-                    rowID: "off",
-                    isSelected: self.settings.dictationPromptSelection(for: activeDictationSlot) == .off
-                ) {
-                    self.contentState.onDictationPromptSelectionRequested?(.off)
-                    self.restoreRecordingTargetFocus()
-                    self.dismissPromptHoverMenu()
-                }
-            }
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 2) {
+                    let defaultSelected = promptMode.normalized == .dictate
+                        ? (self.settings.dictationPromptSelection(for: activeDictationSlot) == .default)
+                        : (self.settings.selectedPromptID(for: promptMode) == nil)
 
-            self.promptMenuRow("Default", rowID: "default", isSelected: defaultSelected) {
-                if promptMode.normalized == .dictate {
-                    self.contentState.onDictationPromptSelectionRequested?(.default)
-                } else {
-                    self.settings.setSelectedPromptID(nil, for: promptMode)
-                }
-                self.restoreRecordingTargetFocus()
-                self.dismissPromptHoverMenu()
-            }
+                    if promptMode.normalized == .dictate {
+                        self.promptMenuRow(
+                            "Off",
+                            rowID: "off",
+                            isSelected: self.settings.dictationPromptSelection(for: activeDictationSlot) == .off
+                        ) {
+                            self.contentState.onDictationPromptSelectionRequested?(.off)
+                            self.restoreRecordingTargetFocus()
+                            self.dismissPromptHoverMenu()
+                        }
+                    }
 
-            let profiles = self.settings.promptProfiles(for: promptMode)
-            if !profiles.isEmpty {
-                ForEach(profiles) { profile in
-                    let isSelected = promptMode.normalized == .dictate
-                        ? (self.settings.dictationPromptSelection(for: activeDictationSlot) == .profile(profile.id))
-                        : (self.settings.selectedPromptID(for: promptMode) == profile.id)
-                    self.promptMenuRow(
-                        profile.name.isEmpty ? "Untitled" : profile.name,
-                        rowID: profile.id,
-                        isSelected: isSelected
-                    ) {
+                    self.promptMenuRow("Default", rowID: "default", isSelected: defaultSelected) {
                         if promptMode.normalized == .dictate {
-                            self.contentState.onDictationPromptSelectionRequested?(.profile(profile.id))
+                            self.contentState.onDictationPromptSelectionRequested?(.default)
                         } else {
-                            self.settings.setSelectedPromptID(profile.id, for: promptMode)
+                            self.settings.setSelectedPromptID(nil, for: promptMode)
                         }
                         self.restoreRecordingTargetFocus()
                         self.dismissPromptHoverMenu()
                     }
+
+                    let profiles = self.settings.promptProfiles(for: promptMode)
+                    if !profiles.isEmpty {
+                        ForEach(profiles) { profile in
+                            let isSelected = promptMode.normalized == .dictate
+                                ? (self.settings.dictationPromptSelection(for: activeDictationSlot) == .profile(profile.id))
+                                : (self.settings.selectedPromptID(for: promptMode) == profile.id)
+                            self.promptMenuRow(
+                                profile.name.isEmpty ? "Untitled" : profile.name,
+                                rowID: profile.id,
+                                isSelected: isSelected
+                            ) {
+                                if promptMode.normalized == .dictate {
+                                    self.contentState.onDictationPromptSelectionRequested?(.profile(profile.id))
+                                } else {
+                                    self.settings.setSelectedPromptID(profile.id, for: promptMode)
+                                }
+                                self.restoreRecordingTargetFocus()
+                                self.dismissPromptHoverMenu()
+                            }
+                        }
+                    }
                 }
             }
+            .frame(maxHeight: self.promptMenuListMaxHeight)
         }
         .padding(3)
         .background(Color.black)
@@ -617,7 +641,7 @@ struct NotchExpandedView: View {
                     Text("App")
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.82))
-                        .padding(.horizontal, 4)
+                        .padding(.horizontal, 3)
                         .padding(.vertical, 1)
                         .background(
                             Capsule()
@@ -625,8 +649,8 @@ struct NotchExpandedView: View {
                         )
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
             .frame(width: self.promptSelectorFixedWidth, alignment: .leading)
             .background(
                 Capsule()
@@ -719,11 +743,11 @@ struct NotchExpandedView: View {
             HStack(spacing: 6) {
                 self.appIconView
 
-                NotchWaveformView(
+                CompactNotchWaveformView(
                     audioPublisher: self.audioPublisher,
                     color: self.modeColor
                 )
-                .frame(width: 80, height: 22)
+                .frame(width: 42, height: 18)
 
                 self.promptSelectorControl
             }
@@ -766,8 +790,9 @@ struct NotchExpandedView: View {
         }
         .coordinateSpace(name: Self.notchContentCoordinateSpace)
         .frame(width: self.notchContentWidth)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 6)
+        .padding(.top, 1)
+        .padding(.bottom, 4)
         .background(Color.black)
     }
 }
@@ -780,16 +805,17 @@ struct NotchWaveformView: View {
 
     @StateObject private var data: AudioVisualizationData
     @ObservedObject private var contentState = NotchContentState.shared
-    @State private var barHeights: [CGFloat] = Array(repeating: 3, count: 7)
+    @State private var barHeights: [CGFloat] = Array(repeating: 3, count: 5)
     @State private var noiseThreshold: CGFloat = .init(SettingsStore.shared.visualizerNoiseThreshold)
 
-    private let barCount = 7
-    private let barWidth: CGFloat = 3
-    private let barSpacing: CGFloat = 4
+    private let barCount = 5
+    private let barWidth: CGFloat = 2.5
+    private let barSpacing: CGFloat = 2
     private let minHeight: CGFloat = 3
-    private let maxHeight: CGFloat = 20
-    private let processingSweepSeconds: Double = 2.2
-    private let processingBandHalfWidth: CGFloat = 0.34
+    private let maxHeight: CGFloat = 12
+    private let processingSweepSeconds: Double = 2.15
+    private let processingBandHalfWidth: CGFloat = 0.42
+    private let processingFlatHeight: CGFloat = 3
 
     private var currentGlowIntensity: CGFloat {
         self.contentState.isProcessing ? 0.0 : 0.35
@@ -815,7 +841,7 @@ struct NotchWaveformView: View {
                 self.barsView(using: { index in
                     self.displayHeight(for: index)
                 })
-                .foregroundStyle(self.color.opacity(self.contentState.isProcessing ? 0.14 : 1.0))
+                .foregroundStyle(self.color.opacity(self.contentState.isProcessing ? 0.16 : 1.0))
 
                 if self.contentState.isProcessing {
                     self.processingSweep(at: timeline.date)
@@ -824,7 +850,7 @@ struct NotchWaveformView: View {
                                 self.displayHeight(for: index)
                             })
                         }
-                        .shadow(color: .white.opacity(0.26), radius: 2.5, x: 0, y: 0)
+                        .shadow(color: .white.opacity(0.28), radius: 2.5, x: 0, y: 0)
                 }
             }
         }
@@ -835,17 +861,16 @@ struct NotchWaveformView: View {
         }
         .onChange(of: self.contentState.isProcessing) { _, processing in
             if processing {
-                self.setFlatProcessingBars()
+                self.resetBarsToBaseline(animated: false)
             } else {
-                // Resume from silence; next audio tick will animate up.
-                self.updateBars(level: 0)
+                self.updateBars(level: self.data.audioLevel)
             }
         }
         .onAppear {
             if self.contentState.isProcessing {
-                self.setFlatProcessingBars()
+                self.resetBarsToBaseline(animated: false)
             } else {
-                self.updateBars(level: 0)
+                self.updateBars(level: self.data.audioLevel)
             }
         }
         .onDisappear {
@@ -880,13 +905,13 @@ struct NotchWaveformView: View {
             .foregroundStyle(
                 LinearGradient(
                     colors: [
-                        self.color.opacity(0.1),
-                        self.color.opacity(0.22),
-                        .white.opacity(0.82),
-                        self.color.opacity(0.94),
-                        .white.opacity(0.82),
-                        self.color.opacity(0.22),
-                        self.color.opacity(0.1),
+                        self.color.opacity(0.12),
+                        self.color.opacity(0.28),
+                        .white.opacity(0.88),
+                        self.color.opacity(1.0),
+                        .white.opacity(0.88),
+                        self.color.opacity(0.28),
+                        self.color.opacity(0.12),
                     ],
                     startPoint: UnitPoint(x: centerX - self.processingBandHalfWidth, y: 0.5),
                     endPoint: UnitPoint(x: centerX + self.processingBandHalfWidth, y: 0.5)
@@ -898,35 +923,41 @@ struct NotchWaveformView: View {
         guard self.contentState.isProcessing else {
             return self.barHeights[index]
         }
-        return self.minHeight
+        return self.processingFlatHeight
     }
 
-    private func setFlatProcessingBars() {
-        withAnimation(.easeOut(duration: 0.18)) {
-            for i in 0..<self.barCount {
-                self.barHeights[i] = self.minHeight
+    private func resetBarsToBaseline(animated: Bool) {
+        let update = {
+            for index in 0..<self.barCount {
+                self.barHeights[index] = self.minHeight
             }
+        }
+
+        if animated {
+            withAnimation(.easeOut(duration: 0.1)) {
+                update()
+            }
+        } else {
+            update()
         }
     }
 
     private func updateBars(level: CGFloat) {
         let normalizedLevel = min(max(level, 0), 1)
-        let isActive = normalizedLevel > self.noiseThreshold // Use user's sensitivity setting
+        let adjustedLevel = normalizedLevel > self.noiseThreshold
+            ? (normalizedLevel - self.noiseThreshold) / (1.0 - self.noiseThreshold)
+            : 0
 
-        withAnimation(.spring(response: 0.15, dampingFraction: 0.6)) {
-            for i in 0..<self.barCount {
-                let centerDistance = abs(CGFloat(i) - CGFloat(self.barCount - 1) / 2)
-                let centerFactor = 1.0 - (centerDistance / CGFloat(self.barCount / 2)) * 0.4
+        guard adjustedLevel > 0 else {
+            self.resetBarsToBaseline(animated: false)
+            return
+        }
 
-                if isActive {
-                    // Scale audio level relative to threshold for smoother response
-                    let adjustedLevel = (normalizedLevel - self.noiseThreshold) / (1.0 - self.noiseThreshold)
-                    let randomVariation = CGFloat.random(in: 0.7...1.0)
-                    self.barHeights[i] = self.minHeight + (self.maxHeight - self.minHeight) * adjustedLevel * centerFactor * randomVariation
-                } else {
-                    // Complete stillness when below threshold
-                    self.barHeights[i] = self.minHeight
-                }
+        withAnimation(.easeOut(duration: 0.1)) {
+            for index in 0..<self.barCount {
+                let centerDistance = abs(CGFloat(index) - CGFloat(self.barCount - 1) / 2)
+                let centerFactor = 1.0 - (centerDistance / CGFloat(self.barCount / 2)) * 0.28
+                self.barHeights[index] = self.minHeight + (self.maxHeight - self.minHeight) * adjustedLevel * centerFactor
             }
         }
     }
@@ -1524,13 +1555,13 @@ struct CompactNotchWaveformView: View {
 
     @StateObject private var data: AudioVisualizationData
     @ObservedObject private var contentState = NotchContentState.shared
-    @State private var barHeights: [CGFloat] = Array(repeating: 3, count: 5)
+    @State private var barHeights: [CGFloat] = Array(repeating: 3, count: 8)
 
-    private let barCount = 5
+    private let barCount = 8
     private let barWidth: CGFloat = 2.5
     private let barSpacing: CGFloat = 2
     private let minHeight: CGFloat = 3
-    private let maxHeight: CGFloat = 12
+    private let maxHeight: CGFloat = 15
     private let noiseThreshold: CGFloat = 0.05
     private let processingSweepSeconds: Double = 2.15
     private let processingBandHalfWidth: CGFloat = 0.42
