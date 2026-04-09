@@ -34,11 +34,12 @@ final class NotchOverlayManager {
         let allowsExpandedCommandOutput: Bool
     }
 
-    private var notch: DynamicNotch<NotchExpandedView, NotchCompactLeadingView, NotchCompactTrailingView>?
+    private var notch: DynamicNotch<NotchExpandedView, NotchCompactLeadingView, NotchCompactTrailingView, NotchCompactBottomView>?
     private var commandOutputNotch: DynamicNotch<
         NotchCommandOutputExpandedView,
         NotchCompactLeadingView,
-        NotchCompactTrailingView
+        NotchCompactTrailingView,
+        EmptyView
     >?
     private var currentMode: OverlayMode = .dictation
 
@@ -90,6 +91,7 @@ final class NotchOverlayManager {
 
     private(set) var currentNotchPresentationMode: SettingsStore.NotchPresentationMode = .standard
     private(set) var currentNotchPresentationPolicy = NotchPresentationPolicy.standard
+    private(set) var currentScreenSupportsCompactPresentation = false
 
     private init() {
         self.refreshNotchPresentationPolicy()
@@ -203,7 +205,9 @@ final class NotchOverlayManager {
 
     /// Show notch overlay (original behavior)
     private func showNotchOverlay(audioLevelPublisher: AnyPublisher<CGFloat, Never>, mode: OverlayMode) {
-        self.refreshNotchPresentationPolicy()
+        let targetScreen = self.preferredPresentationScreen()
+        self.refreshNotchPresentationPolicy(for: targetScreen)
+        self.currentAudioPublisher = audioLevelPublisher
 
         // Hide bottom overlay if it was visible
         if self.isBottomOverlayVisible {
@@ -225,24 +229,27 @@ final class NotchOverlayManager {
 
         // Create notch with SwiftUI views
         let newNotch = DynamicNotch(
-            hoverBehavior: [.keepVisible, .hapticFeedback],
+            hoverBehavior: [.keepVisible],
             style: .auto
         ) {
             NotchExpandedView(audioPublisher: audioLevelPublisher)
         } compactLeading: {
             NotchCompactLeadingView()
         } compactTrailing: {
-            NotchCompactTrailingView()
+            NotchCompactTrailingView(audioPublisher: audioLevelPublisher)
+        } compactBottom: {
+            NotchCompactBottomView()
         }
 
         self.notch = newNotch
+        let shouldUseCompactPresentation = self.currentNotchPresentationPolicy.usesCompactPresentation
 
         // Resolve presentation from policy so future notch modes don't require call-site changes.
         Task { [weak self] in
-            if self?.currentNotchPresentationPolicy.usesCompactPresentation == true {
-                await newNotch.compact()
+            if shouldUseCompactPresentation {
+                await newNotch.compact(on: targetScreen)
             } else {
-                await newNotch.expand()
+                await newNotch.expand(on: targetScreen)
             }
             // Only update state if we're still the active generation
             guard let self = self, self.generation == currentGeneration else { return }
@@ -435,7 +442,9 @@ final class NotchOverlayManager {
         } compactLeading: {
             NotchCompactLeadingView()
         } compactTrailing: {
-            NotchCompactTrailingView()
+            NotchCompactTrailingView(audioPublisher: publisher)
+        } compactBottom: {
+            EmptyView()
         }
 
         self.commandOutputNotch = newNotch
@@ -564,10 +573,27 @@ final class NotchOverlayManager {
         self.currentAudioPublisher = publisher
     }
 
-    private func refreshNotchPresentationPolicy() {
+    private func preferredPresentationScreen() -> NSScreen {
+        let mouseLocation = NSEvent.mouseLocation
+        if let screenUnderMouse = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) {
+            return screenUnderMouse
+        }
+        return NSScreen.main ?? NSScreen.screens[0]
+    }
+
+    private func supportsCompactPresentation(on screen: NSScreen) -> Bool {
+        screen.auxiliaryTopLeftArea?.width != nil && screen.auxiliaryTopRightArea?.width != nil
+    }
+
+    private func refreshNotchPresentationPolicy(for screen: NSScreen? = nil) {
         let mode = SettingsStore.shared.notchPresentationMode
         self.currentNotchPresentationMode = mode
-        self.currentNotchPresentationPolicy = .forMode(mode)
+        let resolvedScreen = screen ?? self.preferredPresentationScreen()
+        self.currentScreenSupportsCompactPresentation = self.supportsCompactPresentation(on: resolvedScreen)
+        self.currentNotchPresentationPolicy = .forMode(
+            mode,
+            supportsCompactPresentation: self.currentScreenSupportsCompactPresentation
+        )
     }
 }
 
@@ -585,19 +611,19 @@ private extension NotchOverlayManager.NotchPresentationPolicy {
     static let minimal = Self(
         usesCompactPresentation: true,
         showsPromptSelector: false,
-        showsStreamingPreview: false,
+        showsStreamingPreview: true,
         showsModeLabel: true,
         allowsCommandExpansion: false,
         allowsCommandActions: false,
         allowsExpandedCommandOutput: false
     )
 
-    static func forMode(_ mode: SettingsStore.NotchPresentationMode) -> Self {
+    static func forMode(_ mode: SettingsStore.NotchPresentationMode, supportsCompactPresentation: Bool) -> Self {
         switch mode {
         case .standard:
             return .standard
         case .minimal:
-            return .minimal
+            return supportsCompactPresentation ? .minimal : .standard
         }
     }
 }

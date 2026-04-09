@@ -44,6 +44,8 @@ final class MenuBarManager: NSObject, ObservableObject, NSMenuDelegate {
     // Track pending overlay operations to prevent spam
     private var pendingShowOperation: DispatchWorkItem?
     private var pendingHideOperation: DispatchWorkItem?
+    private var pendingProcessingShowOperation: DispatchWorkItem?
+    private let processingVisualDelay: DispatchTimeInterval = .milliseconds(100)
 
     // Subscription for forwarding audio levels to expanded command notch
     private var expandedModeAudioSubscription: AnyCancellable?
@@ -212,11 +214,22 @@ final class MenuBarManager: NSObject, ObservableObject, NSMenuDelegate {
         self.isProcessingActive = processing
 
         if processing {
+            self.pendingProcessingShowOperation?.cancel()
             // Cancel any pending hide - we want to keep the overlay visible for AI processing
             self.pendingHideOperation?.cancel()
             self.pendingHideOperation = nil
             self.overlayVisible = true
+
+            let showItem = DispatchWorkItem { [weak self] in
+                guard let self = self, self.isProcessingActive else { return }
+                NotchOverlayManager.shared.setProcessing(true)
+                self.pendingProcessingShowOperation = nil
+            }
+            self.pendingProcessingShowOperation = showItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + self.processingVisualDelay, execute: showItem)
         } else {
+            self.pendingProcessingShowOperation?.cancel()
+            self.pendingProcessingShowOperation = nil
             // When processing ends, schedule the hide (unless expanded output is showing)
             self.overlayVisible = false
 
@@ -241,8 +254,9 @@ final class MenuBarManager: NSObject, ObservableObject, NSMenuDelegate {
             }
             self.pendingHideOperation = hideItem
             DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100), execute: hideItem)
+            NotchOverlayManager.shared.setProcessing(false)
+            return
         }
-        NotchOverlayManager.shared.setProcessing(processing)
     }
 
     private func setupMenuBarSafely() {

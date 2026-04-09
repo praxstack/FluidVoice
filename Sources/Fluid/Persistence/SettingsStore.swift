@@ -1337,6 +1337,15 @@ final class SettingsStore: ObservableObject {
     enum NotchPresentationMode: String, CaseIterable, Codable {
         case standard
         case minimal
+
+        var displayName: String {
+            switch self {
+            case .standard:
+                return "Standard Notch"
+            case .minimal:
+                return "Compact"
+            }
+        }
     }
 
     /// Where the recording overlay appears (default: bottom)

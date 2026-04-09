@@ -1719,12 +1719,12 @@ struct ContentView: View {
 
         self.clearActiveRecordingMode()
 
-        // Show "Transcribing..." state before calling stop() to keep overlay visible.
+        // Show "Transcribing" state before calling stop() to keep overlay visible.
         // The asr.stop() call performs the final transcription which can take a moment
         // (especially for slower models like Whisper Medium/Large).
         DebugLogger.shared.debug("Showing transcription processing state", source: "ContentView")
         self.menuBarManager.setProcessing(true)
-        NotchOverlayManager.shared.updateTranscriptionText("Transcribing...")
+        NotchOverlayManager.shared.updateTranscriptionText("Transcribing")
 
         // Give SwiftUI a chance to render the processing state before we do heavier work
         // (ASR finalization + optional AI post-processing).
@@ -1814,7 +1814,7 @@ struct ContentView: View {
             let postProcessingStart = Date()
 
             // Update overlay text to show we're now refining (processing already true)
-            NotchOverlayManager.shared.updateTranscriptionText("Refining...")
+            NotchOverlayManager.shared.updateTranscriptionText("Refining")
 
             // Ensure the status label becomes visible immediately.
             await Task.yield()
