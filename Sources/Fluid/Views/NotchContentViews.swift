@@ -405,6 +405,12 @@ struct NotchExpandedView: View {
         return "Default"
     }
 
+    private var compactPromptLabel: String {
+        let label = self.selectedPromptLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard label.count > 7 else { return label }
+        return String(label.prefix(7))
+    }
+
     private var previewMaxHeight: CGFloat {
         60
     }
@@ -414,7 +420,7 @@ struct NotchExpandedView: View {
     }
 
     private var promptSelectorFixedWidth: CGFloat {
-        90
+        52
     }
 
     private var promptMenuWidth: CGFloat {
@@ -440,7 +446,7 @@ struct NotchExpandedView: View {
     private static let notchContentCoordinateSpace = "NotchExpandedContent"
 
     private var notchContentWidth: CGFloat {
-        184
+        176
     }
 
     @ViewBuilder
@@ -627,13 +633,13 @@ struct NotchExpandedView: View {
     @ViewBuilder
     private var promptSelectorControl: some View {
         if self.presentationPolicy.showsPromptSelector {
-            HStack(spacing: 6) {
-                Text(self.selectedPromptLabel)
+            HStack(spacing: 3) {
+                Text(self.compactPromptLabel)
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(self.isHoveringPromptChip ? .white.opacity(0.94) : .white.opacity(0.86))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(self.isHoveringPromptChip ? .white.opacity(0.78) : .white.opacity(0.62))
@@ -649,8 +655,8 @@ struct NotchExpandedView: View {
                         )
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 3)
             .frame(width: self.promptSelectorFixedWidth, alignment: .leading)
             .background(
                 Capsule()
@@ -664,10 +670,6 @@ struct NotchExpandedView: View {
                             endPoint: .bottom
                         )
                     )
-            )
-            .overlay(
-                Capsule()
-                    .stroke(Color.white.opacity(self.isHoveringPromptChip ? 0.24 : 0.14), lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.28), radius: 8, x: 0, y: 4)
             .shadow(color: .white.opacity(self.isHoveringPromptChip ? 0.06 : 0.03), radius: 0, x: 0, y: 1)
@@ -740,18 +742,19 @@ struct NotchExpandedView: View {
 
     private var notchBodyContent: some View {
         VStack(alignment: .center, spacing: 6) {
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 self.appIconView
 
                 CompactNotchWaveformView(
                     audioPublisher: self.audioPublisher,
                     color: self.modeColor
                 )
-                .frame(width: 42, height: 18)
+                .frame(width: 48, height: 18)
 
                 self.promptSelectorControl
             }
             .frame(maxWidth: .infinity, alignment: .center)
+            .offset(x: 4, y: 0)
 
             self.promptHoverMenuRow
 
@@ -791,7 +794,7 @@ struct NotchExpandedView: View {
         .coordinateSpace(name: Self.notchContentCoordinateSpace)
         .frame(width: self.notchContentWidth)
         .padding(.horizontal, 6)
-        .padding(.top, 1)
+        .padding(.top, 0)
         .padding(.bottom, 4)
         .background(Color.black)
     }
