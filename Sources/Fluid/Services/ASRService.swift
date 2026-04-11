@@ -300,7 +300,7 @@ final class ASRService: ObservableObject {
             return true
         }
 
-        guard now.timeIntervalSince(lastFailureCaptureAt) >= self.streamingChunkFailureAnalyticsMinimumIntervalSeconds else {
+        guard now.timeIntervalSince(lastFailureCaptureAt) >= self.streamingChunkFailureMinIntervalSeconds else {
             return false
         }
 
@@ -325,7 +325,7 @@ final class ASRService: ObservableObject {
             "transcription_provider": dims.provider,
             "transcription_model": dims.model,
             "success_sample_rate_chunks": self.streamingChunkAnalyticsSuccessSampleRate,
-            "failure_min_interval_seconds": self.streamingChunkFailureAnalyticsMinimumIntervalSeconds,
+            "failure_min_interval_seconds": self.streamingChunkFailureMinIntervalSeconds,
         ]
 
         if let error {
@@ -497,7 +497,7 @@ final class ASRService: ObservableObject {
     private var skipNextChunk: Bool = false
     private var previousFullTranscription: String = ""
     private let streamingChunkAnalyticsSuccessSampleRate: Int = 50
-    private let streamingChunkFailureAnalyticsMinimumIntervalSeconds: TimeInterval = 15
+    private let streamingChunkFailureMinIntervalSeconds: TimeInterval = 15
     private var streamingChunkAnalyticsSuccessCount: Int = 0
     private var lastStreamingChunkFailureAnalyticsAt: Date?
     private let transcriptionExecutor = TranscriptionExecutor() // Serializes all CoreML access
