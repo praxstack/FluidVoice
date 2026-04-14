@@ -1760,6 +1760,10 @@ struct BottomOverlayView: View {
     }
 
     private static let transientOverlayStatusTexts: Set<String> = [
+        "Transcribing",
+        "Refining",
+        "Thinking",
+        "Working",
         "Transcribing...",
         "Refining...",
         "Thinking...",
