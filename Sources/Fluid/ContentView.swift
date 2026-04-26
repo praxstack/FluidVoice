@@ -314,27 +314,34 @@ struct ContentView: View {
 
             // Set up notch click callback for expanding command conversation
             NotchOverlayManager.shared.onNotchClicked = {
+                guard NotchOverlayManager.shared.canHandleNotchCommandTap else { return }
                 // When notch is clicked in command mode, show expanded conversation
-                if !NotchContentState.shared.commandConversationHistory.isEmpty {
+                if NotchOverlayManager.shared.canShowExpandedCommandOutput,
+                   !NotchContentState.shared.commandConversationHistory.isEmpty
+                {
                     NotchOverlayManager.shared.showExpandedCommandOutput()
                 }
             }
 
             // Set up command mode callbacks for notch
             NotchOverlayManager.shared.onCommandFollowUp = { [weak commandModeService] text in
+                guard NotchOverlayManager.shared.allowsCommandNotchActions else { return }
                 await commandModeService?.processFollowUpCommand(text)
             }
 
             // Chat management callbacks
             NotchOverlayManager.shared.onNewChat = { [weak commandModeService] in
+                guard NotchOverlayManager.shared.allowsCommandNotchActions else { return }
                 commandModeService?.createNewChat()
             }
 
             NotchOverlayManager.shared.onSwitchChat = { [weak commandModeService] chatID in
+                guard NotchOverlayManager.shared.allowsCommandNotchActions else { return }
                 commandModeService?.switchToChat(id: chatID)
             }
 
             NotchOverlayManager.shared.onClearChat = { [weak commandModeService] in
+                guard NotchOverlayManager.shared.allowsCommandNotchActions else { return }
                 commandModeService?.deleteCurrentChat()
             }
 
@@ -1777,12 +1784,12 @@ struct ContentView: View {
 
         self.clearActiveRecordingMode()
 
-        // Show "Transcribing..." state before calling stop() to keep overlay visible.
+        // Show "Transcribing" state before calling stop() to keep overlay visible.
         // The asr.stop() call performs the final transcription which can take a moment
         // (especially for slower models like Whisper Medium/Large).
         DebugLogger.shared.debug("Showing transcription processing state", source: "ContentView")
         self.menuBarManager.setProcessing(true)
-        NotchOverlayManager.shared.updateTranscriptionText("Transcribing...")
+        NotchOverlayManager.shared.updateTranscriptionText("Transcribing")
 
         // Give SwiftUI a chance to render the processing state before we do heavier work
         // (ASR finalization + optional AI post-processing).
@@ -1799,6 +1806,7 @@ struct ContentView: View {
             DebugLogger.shared.debug("Transcription returned empty text", source: "ContentView")
             // Hide processing state when returning early
             self.menuBarManager.setProcessing(false)
+            NotchOverlayManager.shared.hide()
             return
         }
 
@@ -1877,7 +1885,7 @@ struct ContentView: View {
             let postProcessingStart = Date()
 
             // Update overlay text to show we're now refining (processing already true)
-            NotchOverlayManager.shared.updateTranscriptionText("Refining...")
+            NotchOverlayManager.shared.updateTranscriptionText("Refining")
 
             // Ensure the status label becomes visible immediately.
             await Task.yield()
@@ -2039,6 +2047,10 @@ struct ContentView: View {
                     "method": AnalyticsOutputMethod.historyOnly.rawValue,
                 ]
             )
+        }
+
+        if !didTypeExternally {
+            NotchOverlayManager.shared.hide()
         }
     }
 
