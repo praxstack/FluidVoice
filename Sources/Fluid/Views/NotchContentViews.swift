@@ -275,7 +275,7 @@ struct ShimmerText: View {
     }
 }
 
-private struct CompositorShimmerSweep: NSViewRepresentable {
+struct CompositorShimmerSweep: NSViewRepresentable {
     var duration: CFTimeInterval = 1.0
     var peakOpacity: CGFloat = 0.88
 
@@ -290,7 +290,7 @@ private struct CompositorShimmerSweep: NSViewRepresentable {
     }
 }
 
-private final class CompositorShimmerSweepView: NSView {
+final class CompositorShimmerSweepView: NSView {
     private let gradientLayer = CAGradientLayer()
     private var animationDuration: CFTimeInterval = 1.0
     private var peakOpacity: CGFloat = 0.88

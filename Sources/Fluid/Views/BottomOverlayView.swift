@@ -1726,6 +1726,7 @@ struct BottomOverlayView: View {
     @State private var dynamicPreviewResizeBucket: Int = 0
     @State private var processingStatusVisible = false
     @State private var processingStatusCycleID = 0
+    @State private var lastResolvedAppIcon: NSImage?
 
     struct LayoutConstants {
         let hPadding: CGFloat
@@ -1748,9 +1749,34 @@ struct BottomOverlayView: View {
         let usesFixedCanvas: Bool
         let showsTopControls: Bool
         let showsPreview: Bool
+        let showsModeLabel: Bool
 
         static func get(for size: SettingsStore.OverlaySize) -> LayoutConstants {
             switch size {
+            case .pill:
+                return LayoutConstants(
+                    hPadding: 10,
+                    vPadding: 7,
+                    waveformWidth: 42,
+                    waveformHeight: 16,
+                    iconSize: 18,
+                    transFontSize: 10,
+                    modeFontSize: 9,
+                    cornerRadius: 16,
+                    barCount: 8,
+                    barWidth: 2.5,
+                    barSpacing: 2.0,
+                    minBarHeight: 3,
+                    maxBarHeight: 15,
+                    containerWidth: 88,
+                    overlayWidth: 88,
+                    overlayHeight: 32,
+                    previewBoxHeight: 0,
+                    usesFixedCanvas: false,
+                    showsTopControls: false,
+                    showsPreview: false,
+                    showsModeLabel: false
+                )
             case .small:
                 return LayoutConstants(
                     hPadding: 10,
@@ -1772,7 +1798,8 @@ struct BottomOverlayView: View {
                     previewBoxHeight: 0,
                     usesFixedCanvas: false,
                     showsTopControls: false,
-                    showsPreview: true
+                    showsPreview: true,
+                    showsModeLabel: true
                 )
             case .medium:
                 return LayoutConstants(
@@ -1795,7 +1822,8 @@ struct BottomOverlayView: View {
                     previewBoxHeight: 0,
                     usesFixedCanvas: false,
                     showsTopControls: true,
-                    showsPreview: true
+                    showsPreview: true,
+                    showsModeLabel: true
                 )
             case .large:
                 return LayoutConstants(
@@ -1818,7 +1846,8 @@ struct BottomOverlayView: View {
                     previewBoxHeight: 92,
                     usesFixedCanvas: true,
                     showsTopControls: true,
-                    showsPreview: true
+                    showsPreview: true,
+                    showsModeLabel: true
                 )
             }
         }
@@ -1842,6 +1871,10 @@ struct BottomOverlayView: View {
         case .edit, .rewrite, .write: return "Edit"
         case .command: return "Command"
         }
+    }
+
+    private var displayedAppIcon: NSImage? {
+        self.contentState.targetAppIcon ?? self.activeAppMonitor.activeAppIcon ?? self.lastResolvedAppIcon
     }
 
     private var processingLabel: String {
@@ -2047,6 +2080,7 @@ struct BottomOverlayView: View {
     }
 
     private func refreshDynamicPreviewSizeIfNeeded(for previewText: String) {
+        guard self.layout.showsPreview else { return }
         guard !self.layout.usesFixedCanvas else { return }
         let nextBucket = self.previewResizeBucket(for: previewText)
         guard nextBucket != self.dynamicPreviewResizeBucket else { return }
@@ -2127,6 +2161,11 @@ struct BottomOverlayView: View {
 
     private func closePromptMenu() {
         BottomOverlayPromptMenuController.shared.hide()
+    }
+
+    private func rememberAppIcon(_ icon: NSImage?) {
+        guard let icon else { return }
+        self.lastResolvedAppIcon = icon
     }
 
     private func handlePromptSelectorHover(_ hovering: Bool) {
@@ -2553,8 +2592,8 @@ struct BottomOverlayView: View {
                 // Waveform + Mode label row
                 HStack(spacing: self.layout.hPadding / 1.5) {
                     // Target app icon (the app where text will be typed)
-                    let appIcon = self.contentState.targetAppIcon ?? self.activeAppMonitor.activeAppIcon
-                    let showModelLoading = !self.appServices.asr.isAsrReady &&
+                    let appIcon = self.displayedAppIcon
+                    let showModelLoading = self.layout.showsModeLabel && !self.appServices.asr.isAsrReady &&
                         (self.appServices.asr.isLoadingModel || self.appServices.asr.isDownloadingModel)
                     VStack(spacing: 2) {
                         if showModelLoading {
@@ -2567,31 +2606,37 @@ struct BottomOverlayView: View {
                                 .aspectRatio(contentMode: .fit)
                                 .frame(width: self.layout.iconSize, height: self.layout.iconSize)
                                 .clipShape(RoundedRectangle(cornerRadius: self.layout.iconSize / 4))
+                        } else if !self.layout.showsModeLabel {
+                            Circle()
+                                .fill(self.modeColor.opacity(0.9))
+                                .frame(width: max(self.layout.iconSize * 0.45, 7), height: max(self.layout.iconSize * 0.45, 7))
                         }
                     }
                     .frame(width: self.layout.iconSize, height: self.layout.iconSize)
-                    .opacity((appIcon != nil || showModelLoading) ? 1 : 0)
+                    .opacity((appIcon != nil || showModelLoading || !self.layout.showsModeLabel) ? 1 : 0)
 
                     // Waveform visualization
                     BottomWaveformView(color: self.modeColor, layout: self.layout)
                         .frame(width: self.layout.waveformWidth, height: self.layout.waveformHeight)
 
                     // Mode label + model load hint
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(self.modeLabel)
-                            .font(.system(size: self.layout.modeFontSize, weight: .semibold))
-                            .foregroundStyle(self.modeColor)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-
-                        if !self.appServices.asr.isAsrReady &&
-                            (self.appServices.asr.isLoadingModel || self.appServices.asr.isDownloadingModel)
-                            && self.settings.overlaySize != .small
-                        {
-                            Text("Loading model…")
-                                .font(.system(size: max(self.layout.modeFontSize - 2, 9), weight: .medium))
-                                .foregroundStyle(.orange.opacity(0.85))
+                    if self.layout.showsModeLabel {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(self.modeLabel)
+                                .font(.system(size: self.layout.modeFontSize, weight: .semibold))
+                                .foregroundStyle(self.modeColor)
                                 .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+
+                            if !self.appServices.asr.isAsrReady &&
+                                (self.appServices.asr.isLoadingModel || self.appServices.asr.isDownloadingModel)
+                                && self.settings.overlaySize != .small
+                            {
+                                Text("Loading model…")
+                                    .font(.system(size: max(self.layout.modeFontSize - 2, 9), weight: .medium))
+                                    .foregroundStyle(.orange.opacity(0.85))
+                                    .lineLimit(1)
+                            }
                         }
                     }
                 }
@@ -2703,7 +2748,11 @@ struct BottomOverlayView: View {
             self.dynamicPreviewMeasuredHeight = measuredHeight
         }
         .onAppear {
+            self.rememberAppIcon(self.contentState.targetAppIcon ?? self.activeAppMonitor.activeAppIcon)
             self.dynamicPreviewResizeBucket = self.previewResizeBucket(for: self.currentPreviewSizingText)
+        }
+        .onReceive(self.contentState.$targetAppIcon) { icon in
+            self.rememberAppIcon(icon)
         }
         .onDisappear {
             self.closePromptMenu()
@@ -2755,12 +2804,29 @@ struct BottomWaveformView: View {
         self.layout.maxBarHeight
     }
 
+    private var isPillStyle: Bool {
+        !self.layout.showsModeLabel
+    }
+
     private var currentGlowIntensity: CGFloat {
-        self.contentState.isProcessing ? 0.0 : 0.5
+        if self.isPillStyle {
+            return 0.0
+        }
+        return self.contentState.isProcessing ? 0.0 : 0.5
     }
 
     private var currentGlowRadius: CGFloat {
-        self.contentState.isProcessing ? 0.0 : 4
+        if self.isPillStyle {
+            return 0.0
+        }
+        return self.contentState.isProcessing ? 0.0 : 4
+    }
+
+    private var barFillColor: Color {
+        if self.isPillStyle {
+            return Color.white.opacity(self.contentState.isProcessing ? 0.28 : 0.62)
+        }
+        return self.color.opacity(self.contentState.isProcessing ? 0.16 : 1.0)
     }
 
     private var isReleaseAnimationActive: Bool {
@@ -2776,17 +2842,16 @@ struct BottomWaveformView: View {
     }
 
     var body: some View {
-        HStack(spacing: self.barSpacing) {
-            ForEach(0..<self.barCount, id: \.self) { index in
-                RoundedRectangle(cornerRadius: self.barWidth / 2)
-                    .fill(self.color)
-                    .frame(width: self.barWidth, height: self.isReleaseAnimationActive ? self.minHeight : self.safeBarHeight(at: index))
-                    .shadow(
-                        color: self.color.opacity(self.isReleaseAnimationActive ? 0 : self.currentGlowIntensity),
-                        radius: self.isReleaseAnimationActive ? 0 : self.currentGlowRadius,
-                        x: 0,
-                        y: 0
-                    )
+        ZStack {
+            self.barsView
+                .foregroundStyle(self.barFillColor)
+
+            if self.contentState.isProcessing {
+                CompositorShimmerSweep(duration: 1.05, peakOpacity: 0.9)
+                    .mask {
+                        self.barsView
+                    }
+                    .shadow(color: .white.opacity(0.28), radius: 2.5, x: 0, y: 0)
             }
         }
         .onChange(of: self.contentState.bottomOverlayAudioLevel) { _, level in
@@ -2832,6 +2897,44 @@ struct BottomWaveformView: View {
         }
     }
 
+    private var barsView: some View {
+        HStack(spacing: self.barSpacing) {
+            ForEach(0..<self.barCount, id: \.self) { index in
+                RoundedRectangle(cornerRadius: self.barWidth / 2)
+                    .frame(width: self.barWidth, height: self.displayHeight(at: index))
+                    .shadow(
+                        color: self.color.opacity(self.isReleaseAnimationActive ? 0 : self.currentGlowIntensity),
+                        radius: self.isReleaseAnimationActive ? 0 : self.currentGlowRadius,
+                        x: 0,
+                        y: 0
+                    )
+            }
+        }
+    }
+
+    private func displayHeight(at index: Int) -> CGFloat {
+        if self.isPillStyle, self.isReleaseAnimationActive || self.contentState.isProcessing {
+            return self.minHeight
+        }
+
+        if self.isReleaseAnimationActive || self.contentState.isProcessing {
+            return self.minHeight
+        }
+        return self.safeBarHeight(at: index)
+    }
+
+    private func pillPeakHeight(at index: Int) -> CGFloat {
+        let pattern: [CGFloat] = [0.12, 0.45, 0.76, 0.93, 0.93, 0.76, 0.45, 0.18]
+        let factor: CGFloat
+        if index < pattern.count {
+            factor = pattern[index]
+        } else {
+            let centerDistance = abs(CGFloat(index) - CGFloat(self.barCount - 1) / 2)
+            factor = max(0.16, 0.94 - centerDistance * 0.22)
+        }
+        return self.minHeight + (self.maxHeight - self.minHeight) * factor
+    }
+
     private func setFlatProcessingBars() {
         // Ensure array is properly sized before modifying
         guard self.barHeights.count >= self.barCount else { return }
@@ -2847,6 +2950,11 @@ struct BottomWaveformView: View {
     private func updateBars(level: CGFloat) {
         // Ensure array is properly sized before modifying
         guard self.barHeights.count >= self.barCount else { return }
+
+        if self.isPillStyle {
+            self.updatePillBars(level: level)
+            return
+        }
 
         let normalizedLevel = min(max(level, 0), 1)
         let isActive = normalizedLevel > self.noiseThreshold // Use user's sensitivity setting
@@ -2877,6 +2985,22 @@ struct BottomWaveformView: View {
                 let amplifiedLevel = pow(adjustedLevel, 0.6) // More responsive to quieter sounds
                 let barVariation = 0.88 + 0.12 * cos(CGFloat(i) * 1.7)
                 self.barHeights[i] = self.minHeight + (self.maxHeight - self.minHeight) * amplifiedLevel * centerFactor * barVariation
+            }
+        }
+    }
+
+    private func updatePillBars(level: CGFloat) {
+        let normalizedLevel = min(max(level, 0), 1)
+        let denominator = max(1.0 - self.noiseThreshold, 0.001)
+        let adjustedLevel = max(min((normalizedLevel - self.noiseThreshold) / denominator, 1.0), 0.0)
+        let amplifiedLevel = pow(adjustedLevel, 0.7)
+
+        withAnimation(.easeOut(duration: 0.08)) {
+            for i in 0..<self.barCount {
+                let peakHeight = self.pillPeakHeight(at: i)
+                let variation = 0.92 + 0.08 * cos(CGFloat(i) * 1.45)
+                let nextHeight = self.minHeight + (peakHeight - self.minHeight) * amplifiedLevel * variation
+                self.barHeights[i] = min(self.maxHeight, max(self.minHeight, nextHeight))
             }
         }
     }

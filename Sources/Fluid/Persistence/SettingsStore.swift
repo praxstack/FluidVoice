@@ -1324,12 +1324,14 @@ final class SettingsStore: ObservableObject {
 
     /// Size options for the recording overlay
     enum OverlaySize: String, CaseIterable, Codable {
+        case pill
         case small
         case medium
         case large
 
         var displayName: String {
             switch self {
+            case .pill: return "Pill"
             case .small: return "Small"
             case .medium: return "Medium"
             case .large: return "Large"
