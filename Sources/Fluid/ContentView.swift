@@ -1802,9 +1802,6 @@ struct ContentView: View {
             "Stop transcription result | chars=\(transcribedText.count) | empty=\(transcribedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)",
             source: "ContentView"
         )
-        if NotchOverlayManager.shared.isBottomOverlayVisible {
-            BottomOverlayWindowController.shared.beginReleaseTransition()
-        }
 
         // Reset the transcription text display after transcription completes
         NotchOverlayManager.shared.updateTranscriptionText("")
@@ -1845,6 +1842,10 @@ struct ContentView: View {
                 promptTest.lastError = error.localizedDescription
             }
             return
+        }
+
+        if NotchOverlayManager.shared.isBottomOverlayVisible {
+            BottomOverlayWindowController.shared.beginReleaseTransition()
         }
 
         // If this was a rewrite recording, process the rewrite instead of typing
