@@ -1412,7 +1412,7 @@ struct SettingsView: View {
                                 .disabled(self.asr.isRunning)
                             }
 
-                            Text("Normal: most reliable and standard. Fast: faster, but maybe inaccurate.")
+                            Text("Standard: most reliable. Fast: faster, but maybe inaccurate.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
 

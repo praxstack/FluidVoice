@@ -9,7 +9,7 @@ enum ParakeetFinalizationMode: String, CaseIterable, Codable, Identifiable {
     var displayName: String {
         switch self {
         case .stableFullFinal:
-            return "Normal"
+            return "Standard"
         case .tokenTimedChunkMerge:
             return "Fast"
         }
@@ -18,7 +18,7 @@ enum ParakeetFinalizationMode: String, CaseIterable, Codable, Identifiable {
     var detailText: String {
         switch self {
         case .stableFullFinal:
-            return "Most reliable and standard."
+            return "Most reliable."
         case .tokenTimedChunkMerge:
             return "Faster, but maybe inaccurate."
         }
