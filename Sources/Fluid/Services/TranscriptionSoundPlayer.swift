@@ -13,20 +13,26 @@ final class TranscriptionSoundPlayer {
 
     func playStartSound() {
         let selected = SettingsStore.shared.transcriptionStartSound
-        guard let soundName = selected.soundFileName else { return }
+        guard let soundName = selected.startSoundFileName else { return }
+        self.play(soundName: soundName)
+    }
+
+    func playStopSound() {
+        let selected = SettingsStore.shared.transcriptionStartSound
+        guard let soundName = selected.stopSoundFileName else { return }
         self.play(soundName: soundName)
     }
 
     /// Preview a specific sound at the current volume setting (used in Settings UI).
     func playPreview(sound: SettingsStore.TranscriptionStartSound) {
-        guard let soundName = sound.soundFileName else { return }
+        guard let soundName = sound.startSoundFileName else { return }
         self.play(soundName: soundName)
     }
 
     /// Preview current sound at a specific volume (used when slider is released).
     func playPreviewAtVolume(_ volume: Float) {
         let selected = SettingsStore.shared.transcriptionStartSound
-        guard let soundName = selected.soundFileName else { return }
+        guard let soundName = selected.startSoundFileName else { return }
         self.play(soundName: soundName, overrideVolume: volume)
     }
 

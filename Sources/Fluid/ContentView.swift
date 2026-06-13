@@ -1824,6 +1824,7 @@ struct ContentView: View {
             "Routing decision snapshot | activeMode=\(modeAtStop.rawValue) | rewrite=\(wasRewriteMode) | command=\(wasCommandMode) | overlay=\(NotchContentState.shared.mode.rawValue)",
             source: "ContentView"
         )
+        TranscriptionSoundPlayer.shared.playStopSound()
 
         self.clearActiveRecordingMode()
 

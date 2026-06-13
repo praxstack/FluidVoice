@@ -280,7 +280,7 @@ struct SettingsView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Transcription Sounds")
                                         .font(.body)
-                                    Text("Choose which sound plays when recording starts. Select None to disable.")
+                                    Text("Choose the sound cue for recording. Some cues include an end sound.")
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
                                 }
@@ -307,7 +307,7 @@ struct SettingsView: View {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text("Volume")
                                             .font(.body)
-                                        Text("Adjust the notification sound volume.")
+                                        Text("Adjust the recording sound cue volume.")
                                             .font(.subheadline)
                                             .foregroundStyle(.secondary)
                                     }
