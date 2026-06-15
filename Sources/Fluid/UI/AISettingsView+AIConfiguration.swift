@@ -1263,7 +1263,7 @@ extension AIEnhancementSettingsView {
                         }
                         .font(.caption)
                     }
-                    .buttonStyle(CompactButtonStyle(foreground: .red, borderColor: .red.opacity(0.6)))
+                    .fluidCompactButton(foreground: .red, borderColor: .red.opacity(0.6))
                 }
             }
         })
@@ -1706,10 +1706,10 @@ extension AIEnhancementSettingsView {
             Image(systemName: hasEnabledConfig ? "brain.fill" : "brain")
                 .font(.system(size: 12))
         }
-        .buttonStyle(CompactButtonStyle(
+        .fluidCompactButton(
             foreground: hasEnabledConfig ? self.theme.palette.accent : nil,
             borderColor: hasEnabledConfig ? self.theme.palette.accent.opacity(0.6) : nil
-        ))
+        )
         .frame(width: 28, height: 28)
         .help("Configure reasoning parameters")
     }
@@ -1867,7 +1867,7 @@ extension AIEnhancementSettingsView {
                         self.viewModel.resetVerification(for: self.viewModel.selectedProviderID)
                         self.viewModel.clearEditProviderDraft()
                     }
-                    .buttonStyle(CompactButtonStyle(foreground: .red, borderColor: .red.opacity(0.6)))
+                    .fluidCompactButton(foreground: .red, borderColor: .red.opacity(0.6))
                 }
 
                 if !isBuiltIn {
@@ -1882,7 +1882,7 @@ extension AIEnhancementSettingsView {
                         }
                         .font(.caption)
                     }
-                    .buttonStyle(CompactButtonStyle(foreground: .red, borderColor: .red.opacity(0.6)))
+                    .fluidCompactButton(foreground: .red, borderColor: .red.opacity(0.6))
                 }
             }
         }
@@ -1949,7 +1949,7 @@ extension AIEnhancementSettingsView {
                 Button(action: { self.viewModel.deleteSelectedModel() }) {
                     HStack(spacing: 4) { Image(systemName: "trash"); Text("Delete") }.font(.caption)
                 }
-                .buttonStyle(CompactButtonStyle(foreground: .red, borderColor: .red.opacity(0.6)))
+                .fluidCompactButton(foreground: .red, borderColor: .red.opacity(0.6))
                 .frame(minWidth: AISettingsLayout.compactActionMinWidth, minHeight: AISettingsLayout.controlHeight)
             }
 
@@ -1958,7 +1958,7 @@ extension AIEnhancementSettingsView {
                     self.viewModel.showingAddModel = true
                     self.viewModel.newModelName = ""
                 }
-                .buttonStyle(CompactButtonStyle(isReady: true))
+                .fluidCompactButton(isReady: true)
                 .frame(minWidth: AISettingsLayout.wideActionMinWidth, minHeight: AISettingsLayout.controlHeight)
             }
 
@@ -1969,10 +1969,10 @@ extension AIEnhancementSettingsView {
                 }
                 .font(.caption)
             }
-            .buttonStyle(CompactButtonStyle(
+            .fluidCompactButton(
                 foreground: self.viewModel.hasReasoningConfigForCurrentModel() ? self.theme.palette.accent : nil,
                 borderColor: self.viewModel.hasReasoningConfigForCurrentModel() ? self.theme.palette.accent.opacity(0.6) : nil
-            ))
+            )
             .frame(minWidth: AISettingsLayout.compactActionMinWidth, minHeight: AISettingsLayout.controlHeight)
         }
     }
@@ -1991,7 +1991,7 @@ extension AIEnhancementSettingsView {
                     }
                 }
             Button("Add") { self.viewModel.addNewModel() }
-                .buttonStyle(CompactButtonStyle(isReady: true))
+                .fluidCompactButton(isReady: true)
                 .frame(minWidth: AISettingsLayout.compactActionMinWidth, minHeight: AISettingsLayout.controlHeight)
                 .disabled(self.viewModel.newModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             Button("Cancel") {
@@ -2172,7 +2172,7 @@ extension AIEnhancementSettingsView {
                         .font(.caption)
                         .fontWeight(.semibold)
                 }
-                .buttonStyle(CompactButtonStyle(isReady: true))
+                .fluidCompactButton(isReady: true)
                 .frame(minWidth: AISettingsLayout.primaryActionMinWidth, minHeight: AISettingsLayout.controlHeight)
                 .disabled(self.viewModel.isTestingConnection ||
                     (!self.viewModel.isLocalEndpoint(self.viewModel.openAIBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)) &&
@@ -2219,7 +2219,7 @@ extension AIEnhancementSettingsView {
                 Label("Add or Modify API Key", systemImage: "key.fill")
                     .labelStyle(.titleAndIcon).font(.caption)
             }
-            .buttonStyle(CompactButtonStyle(isReady: true))
+            .fluidCompactButton(isReady: true)
             .frame(minWidth: AISettingsLayout.primaryActionMinWidth, minHeight: AISettingsLayout.controlHeight)
 
             if let websiteInfo = ModelRepository.shared.providerWebsiteURL(for: self.viewModel.selectedProviderID),

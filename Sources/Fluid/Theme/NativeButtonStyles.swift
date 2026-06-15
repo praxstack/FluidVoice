@@ -41,7 +41,7 @@ enum FluidButtonSize: Equatable {
     }
 
     var accentCompact: Bool {
-        self == .small
+        self == .small || self == .compact
     }
 }
 
@@ -80,6 +80,20 @@ extension View {
         case .inline:
             self.buttonStyle(InlineButtonStyle())
         }
+    }
+
+    func fluidCompactButton(
+        size: FluidButtonSize = .compact,
+        isReady: Bool = false,
+        foreground: Color? = nil,
+        borderColor: Color? = nil
+    ) -> some View {
+        self.buttonStyle(CompactButtonStyle(
+            isReady: isReady,
+            foreground: foreground,
+            borderColor: borderColor,
+            height: size.controlHeight
+        ))
     }
 }
 

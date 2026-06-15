@@ -175,7 +175,7 @@ extension AIEnhancementSettingsView {
                 Button("+ Add Prompt") {
                     self.viewModel.openNewPromptEditor(prefillMode: self.selectedPromptMode)
                 }
-                .buttonStyle(CompactButtonStyle(isReady: true))
+                .fluidCompactButton(isReady: true)
                 .frame(minWidth: AISettingsLayout.actionMinWidth, minHeight: AISettingsLayout.controlHeight)
 
                 Spacer(minLength: 8)
@@ -734,7 +734,7 @@ extension AIEnhancementSettingsView {
                 } label: {
                     Text("+ Add App")
                 }
-                .buttonStyle(CompactButtonStyle(isReady: true))
+                .fluidCompactButton(isReady: true)
                 .frame(minHeight: 26)
                 .disabled(!isEnabled)
                 .opacity(isEnabled ? 1 : 0.48)
