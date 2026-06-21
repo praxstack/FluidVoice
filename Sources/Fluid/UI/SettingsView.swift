@@ -36,8 +36,6 @@ struct SettingsView: View {
     @Binding var hotkeyShortcut: HotkeyShortcut
     @Binding var activeShortcutRecordingTarget: ShortcutRecordingTarget?
     @Binding var shortcutRecordingMessage: String?
-    @Binding var promptModeShortcut: HotkeyShortcut
-    @Binding var promptModeShortcutEnabled: Bool
     @Binding var commandModeShortcut: HotkeyShortcut
     @Binding var rewriteShortcut: HotkeyShortcut
     @Binding var cancelRecordingShortcut: HotkeyShortcut
@@ -681,31 +679,6 @@ struct SettingsView: View {
                                         }
                                     )
                                     self.dictationPromptPicker(for: .primary)
-                                    Divider().opacity(0.2).padding(.vertical, 4)
-
-                                    self.shortcutRow(
-                                        content: .init(
-                                            icon: "text.bubble.fill",
-                                            iconColor: .secondary,
-                                            title: "Secondary Dictation Shortcut",
-                                            description: "Defaults to AI Enhancement, but can use Off, Default, or any custom prompt."
-                                        ),
-                                        shortcut: self.promptModeShortcut,
-                                        isRecording: self.isRecording(.secondaryDictation),
-                                        isAnyRecordingActive: self.isRecordingAnyShortcut,
-                                        recordingMessage: self.isRecording(.secondaryDictation) ? self.shortcutRecordingMessage : nil,
-                                        isEnabled: self.$promptModeShortcutEnabled,
-                                        onChangePressed: {
-                                            DebugLogger.shared.debug("Starting to record new prompt mode shortcut", source: "SettingsView")
-                                            self.shortcutRecordingMessage = nil
-                                            self.activeShortcutRecordingTarget = .secondaryDictation
-                                        }
-                                    )
-
-                                    if self.promptModeShortcutEnabled {
-                                        self.dictationPromptPicker(for: .secondary)
-                                    }
-
                                     Divider().opacity(0.2).padding(.vertical, 4)
 
                                     self.shortcutRow(

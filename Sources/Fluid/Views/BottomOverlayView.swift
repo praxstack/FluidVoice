@@ -2063,7 +2063,7 @@ struct BottomOverlayView: View {
 
         let maxLength: Int
         if self.isCompactControls {
-            maxLength = self.isAppPromptOverrideActive ? 6 : 11
+            maxLength = self.isAppPromptOverrideActive ? 8 : 14
         } else {
             maxLength = self.isAppPromptOverrideActive ? 11 : 16
         }
@@ -2082,7 +2082,7 @@ struct BottomOverlayView: View {
     }
 
     private var promptSelectorChipWidth: CGFloat {
-        self.isCompactControls ? 100 : 164
+        self.isCompactControls ? 118 : 164
     }
 
     private var promptSelectorVerticalPadding: CGFloat {

@@ -61,12 +61,14 @@ enum SidebarItem: Hashable {
     case rewriteMode
 }
 
-enum ShortcutRecordingTarget: String, Hashable {
+enum ShortcutRecordingTarget: Hashable {
     case primaryDictation
     case secondaryDictation
     case command
     case edit
     case cancel
+    case dictationPrompt(String)
+    case newPrompt
 
     var title: String {
         switch self {
@@ -80,6 +82,10 @@ enum ShortcutRecordingTarget: String, Hashable {
             return "Edit Mode"
         case .cancel:
             return "Cancel Recording"
+        case .dictationPrompt:
+            return "Prompt Shortcut"
+        case .newPrompt:
+            return "New Prompt Shortcut"
         }
     }
 
@@ -87,9 +93,14 @@ enum ShortcutRecordingTarget: String, Hashable {
         switch self {
         case .secondaryDictation, .command, .edit:
             return true
-        case .primaryDictation, .cancel:
+        case .primaryDictation, .cancel, .dictationPrompt, .newPrompt:
             return false
         }
+    }
+
+    var promptConfigurationKey: String? {
+        if case let .dictationPrompt(key) = self { return key }
+        return nil
     }
 }
 
@@ -255,491 +266,499 @@ struct ContentView: View {
         }
         let sized = nav.fluidWindowSizing(self.windowSizing)
 
-        return sized.onAppear {
-            self.appear = true
-            self.accessibilityEnabled = self.checkAccessibilityPermissions()
+        let observed = self.applyShortcutStateChanges(to: sized)
 
-            // Handle any pending menu-bar navigation (e.g., Preferences clicked before window existed).
-            self.handleMenuBarNavigation(self.menuBarManager.requestedNavigationDestination)
-            // If a previous run set a pending restart, clear it now on fresh launch
-            if UserDefaults.standard.bool(forKey: self.accessibilityRestartFlagKey) {
-                UserDefaults.standard.set(false, forKey: self.accessibilityRestartFlagKey)
-                self.showRestartPrompt = false
+        return observed
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                let trusted = AXIsProcessTrusted()
+                if trusted != self.accessibilityEnabled {
+                    self.accessibilityEnabled = trusted
+                }
             }
-            // Ensure no restart UI shows if we already have trust
-            if self.accessibilityEnabled {
-                self.finishAccessibilityPermissionFlow()
+            .onReceive(NotificationCenter.default.publisher(for: .openCustomDictionaryFromVoiceEngine)) { _ in
+                self.selectedSidebarItem = .customDictionary
             }
-
-            // Set default selection if none exists (from menu bar navigation)
-            // Show Preferences as default once voice model is ready (AI enhancement is optional)
-            if self.selectedSidebarItem == nil {
-                let isOnboarded = self.asr.isAsrReady || self.asr.modelsExistOnDisk
-                self.selectedSidebarItem = isOnboarded ? .preferences : .welcome
+            .onReceive(NotificationCenter.default.publisher(for: .appNavigationRequested)) { _ in
+                self.handlePendingAppNavigation()
             }
-            self.handlePendingAppNavigation()
-
-            // Reset auto-restart flag if permission was revoked (allows re-triggering if user re-grants)
-            if !self.accessibilityEnabled {
-                UserDefaults.standard.set(false, forKey: self.hasAutoRestartedForAccessibilityKey)
+            .onReceive(NotificationCenter.default.publisher(for: .dictationPromptShortcutsChanged)) { _ in
+                self.hotkeyManager?.updatePromptShortcutAssignments(SettingsStore.shared.dictationPromptShortcutAssignments())
             }
+            .onReceive(NotificationCenter.default.publisher(for: .settingsBackupDidRestore)) { _ in
+                self.reloadSettingsStateAfterBackupRestore()
+            }
+            .toolbar {
+                if !self.settings.shouldShowOnboarding {
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        self.themePreferenceButton
 
-            // Initialize menu bar after app is ready (prevents window server crash)
-            self.menuBarManager.initializeMenuBar()
-
-            // DEFENSIVE STRATEGY: Multi-layer protection against startup crash
-            // Layer 1: Service consolidation (already done - no duplicate @StateObjects)
-            // Layer 2: Lazy service initialization (services created on first access)
-            // Layer 3: Startup gate (signalUIReady + 1.5s delay)
-            // Layer 4: Delayed audio initialization (CoreAudio listeners start after UI is stable)
-            //
-            // This delay ensures SwiftUI's AttributeGraph has finished processing before
-            // any heavy audio system work begins. The race condition between CoreAudio's
-            // HALSystem initialization and SwiftUI metadata processing causes EXC_BAD_ACCESS at 0x0.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                DebugLogger.shared.info("🚦 Startup delay complete, signaling UI ready...", source: "ContentView")
-
-                // Signal that UI is ready - this enables service initialization
-                self.appServices.signalUIReady()
-
-                DebugLogger.shared.info("🔊 Starting delayed audio initialization...", source: "ContentView")
-
-                // Now it's safe to access services (they'll be lazily created)
-                self.audioObserver.startObserving()
-                self.asr.initialize()
-
-                // Configure menu bar manager with ASR service AFTER services are initialized
-                self.menuBarManager.configure(asrService: self.appServices.asr)
-
-                // Load available devices
+                        Button(action: self.openIssueReportingPage) {
+                            Image(systemName: "ladybug.fill")
+                        }
+                        .help("Report an issue")
+                        .accessibilityLabel("Report an issue")
+                    }
+                }
+            }
+            .toolbar(removing: .sidebarToggle)
+            .overlay(alignment: .center) {}
+            .alert(
+                self.asr.errorTitle,
+                isPresented: Binding(
+                    get: { self.asr.showError },
+                    set: { self.asr.showError = $0 }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(self.asr.errorMessage)
+            }
+            .onChange(of: self.audioObserver.changeTick) { _, _ in
+                // Hardware change detected → refresh device lists
                 self.refreshDevices()
 
-                // Set default selection if empty
-                if self.selectedInputUID.isEmpty, let defIn = AudioDevice.getDefaultInputDevice()?.uid { self.selectedInputUID = defIn }
-                if self.selectedOutputUID.isEmpty, let defOut = AudioDevice.getDefaultOutputDevice()?.uid { self.selectedOutputUID = defOut }
-
-                // Input device UI should mirror the current macOS default device.
-                if let systemInputUID = AudioDevice.getDefaultInputDevice()?.uid,
-                   self.inputDevices.contains(where: { $0.uid == systemInputUID })
-                {
-                    self.selectedInputUID = systemInputUID
-                }
-
-                if let prefOut = SettingsStore.shared.preferredOutputDeviceUID,
-                   prefOut.isEmpty == false,
-                   outputDevices.first(where: { $0.uid == prefOut }) != nil
-                {
-                    self.selectedOutputUID = prefOut
-                }
-
-                DebugLogger.shared.info("✅ Audio subsystems initialized", source: "ContentView")
-            }
-
-            // Set up notch click callback for expanding command conversation
-            NotchOverlayManager.shared.onNotchClicked = {
-                guard NotchOverlayManager.shared.canHandleNotchCommandTap else { return }
-                // When notch is clicked in command mode, show expanded conversation
-                if NotchOverlayManager.shared.canShowExpandedCommandOutput,
-                   !NotchContentState.shared.commandConversationHistory.isEmpty
-                {
-                    NotchOverlayManager.shared.showExpandedCommandOutput()
-                }
-            }
-
-            // Set up command mode callbacks for notch
-            NotchOverlayManager.shared.onCommandFollowUp = { [weak commandModeService] text in
-                guard NotchOverlayManager.shared.allowsCommandNotchActions else { return }
-                await commandModeService?.processFollowUpCommand(text)
-            }
-
-            // Chat management callbacks
-            NotchOverlayManager.shared.onNewChat = { [weak commandModeService] in
-                guard NotchOverlayManager.shared.allowsCommandNotchActions else { return }
-                commandModeService?.createNewChat()
-            }
-
-            NotchOverlayManager.shared.onSwitchChat = { [weak commandModeService] chatID in
-                guard NotchOverlayManager.shared.allowsCommandNotchActions else { return }
-                commandModeService?.switchToChat(id: chatID)
-            }
-
-            NotchOverlayManager.shared.onClearChat = { [weak commandModeService] in
-                guard NotchOverlayManager.shared.allowsCommandNotchActions else { return }
-                commandModeService?.deleteCurrentChat()
-            }
-
-            // Start polling for accessibility permission if not granted
-            self.startAccessibilityPolling()
-
-            // Initialize hotkey manager with improved timing and validation
-            self.initializeHotkeyManagerIfNeeded()
-
-            // Note: Overlay is now managed by MenuBarManager (persists even when window closed)
-
-            // Devices loaded in delayed audio initialization block
-            // Device defaults and preferences handled in delayed block
-
-            // Preload ASR model on app startup (with small delay to let app initialize)
-            Task {
-                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
-                await self.preloadASRModel()
-            }
-
-            // Load saved provider ID first
-            self.selectedProviderID = SettingsStore.shared.selectedProviderID
-
-            // Establish provider context first
-            self.updateCurrentProvider()
-
-            self.enableDebugLogs = SettingsStore.shared.enableDebugLogs
-            self.availableModelsByProvider = SettingsStore.shared.availableModelsByProvider
-            self.selectedModelByProvider = SettingsStore.shared.selectedModelByProvider
-            self.providerAPIKeys = SettingsStore.shared.providerAPIKeys
-            self.savedProviders = SettingsStore.shared.savedProviders
-
-            // Migration & cleanup: normalize provider keys and drop legacy flat lists
-            var normalized: [String: [String]] = [:]
-            for (key, models) in self.availableModelsByProvider {
-                let lower = key.lowercased()
-                let newKey: String
-                // Use ModelRepository to correctly identify ALL built-in providers
-                if ModelRepository.shared.isBuiltIn(lower) {
-                    newKey = lower
+                // Only sync UI with system defaults when sync is enabled
+                // When sync is disabled, keep the user's preferred device selection
+                if SettingsStore.shared.syncAudioDevicesWithSystem {
+                    // Sync mode: Update UI to match current system defaults
+                    if let sysIn = AudioDevice.getDefaultInputDevice()?.uid {
+                        self.selectedInputUID = sysIn
+                    }
+                    if let sysOut = AudioDevice.getDefaultOutputDevice()?.uid {
+                        self.selectedOutputUID = sysOut
+                    }
                 } else {
-                    newKey = key.hasPrefix("custom:") ? key : "custom:\(key)"
-                }
-                // Keep only unique, trimmed models
-                let clean = Array(Set(models.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })).sorted()
-                if !clean.isEmpty { normalized[newKey] = clean }
-            }
-            self.availableModelsByProvider = normalized
-            SettingsStore.shared.availableModelsByProvider = normalized
-
-            // Normalize selectedModelByProvider keys similarly and drop invalid selections
-            var normalizedSel: [String: String] = [:]
-            for (key, model) in self.selectedModelByProvider {
-                let lower = key.lowercased()
-                // Use ModelRepository to correctly identify ALL built-in providers
-                let newKey: String = ModelRepository.shared.isBuiltIn(lower) ? lower :
-                    (key.hasPrefix("custom:") ? key : "custom:\(key)")
-                if let list = normalized[newKey], list.contains(model) { normalizedSel[newKey] = model }
-            }
-            self.selectedModelByProvider = normalizedSel
-            SettingsStore.shared.selectedModelByProvider = normalizedSel
-
-            // Determine initial model list without legacy flat-list fallback
-            if let saved = savedProviders.first(where: { $0.id == selectedProviderID }) {
-                // Use models from saved provider
-                self.availableModels = saved.models
-                self.openAIBaseURL = saved.baseURL
-            } else if let stored = availableModelsByProvider[currentProvider], !stored.isEmpty {
-                // Use provider-specific stored list if present
-                self.availableModels = stored
-            } else {
-                // Built-in defaults
-                self.availableModels = ModelRepository.shared.defaultModels(for: self.providerKey(for: self.selectedProviderID))
-            }
-
-            // Restore previously selected model if valid
-            if let sel = selectedModelByProvider[currentProvider], availableModels.contains(sel) {
-                self.selectedModel = sel
-            } else if let first = availableModels.first {
-                self.selectedModel = first
-            }
-
-            NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
-                let eventModifiers = event.modifierFlags.intersection([.function, .command, .option, .control, .shift])
-                let isRecordingAnyShortcut = self.isRecordingAnyShortcutCapture
-                let recordingTarget = self.activeShortcutRecordingTarget
-
-                if event.type == .keyDown {
-                    guard isRecordingAnyShortcut else {
-                        if self.cancelRecordingHotkeyShortcut.matches(keyCode: event.keyCode, modifiers: eventModifiers),
-                           self.handleCancelShortcut()
-                        {
-                            return nil
-                        }
-                        self.shortcutRecordingMessage = nil
-                        self.resetPendingShortcutState()
-                        return event
-                    }
-
-                    let keyCode = event.keyCode
-                    if keyCode == 53 && recordingTarget != .cancel {
-                        DebugLogger.shared.debug("NSEvent monitor: Escape pressed, cancelling shortcut recording", source: "ContentView")
-                        self.clearShortcutRecordingMode()
-                        return nil
-                    }
-
-                    let combinedModifiers = self.pendingModifierFlags.union(eventModifiers)
-                    let newShortcut = HotkeyShortcut(keyCode: keyCode, modifierFlags: combinedModifiers)
-                    DebugLogger.shared.debug("NSEvent monitor: Recording new shortcut: \(newShortcut.displayString)", source: "ContentView")
-
-                    if let recordingTarget,
-                       let conflictMessage = self.shortcutConflictMessage(for: newShortcut, target: recordingTarget)
+                    // Independent mode: Only update if preferred device is no longer available
+                    if let prefIn = SettingsStore.shared.preferredInputDeviceUID,
+                       inputDevices.contains(where: { $0.uid == prefIn })
                     {
-                        self.shortcutRecordingMessage = conflictMessage
-                        self.resetPendingShortcutState()
-                        DebugLogger.shared.debug("NSEvent monitor: Shortcut conflict while recording: \(conflictMessage)", source: "ContentView")
-                        return nil
+                        self.selectedInputUID = prefIn
+                    } else if let sysIn = AudioDevice.getDefaultInputDevice()?.uid {
+                        // Fallback to system default if preferred device disconnected
+                        self.selectedInputUID = sysIn
+                        SettingsStore.shared.preferredInputDeviceUID = sysIn
                     }
 
-                    self.shortcutRecordingMessage = nil
-                    if let recordingTarget {
-                        self.assignRecordedShortcut(newShortcut, to: recordingTarget)
+                    if let prefOut = SettingsStore.shared.preferredOutputDeviceUID,
+                       outputDevices.contains(where: { $0.uid == prefOut })
+                    {
+                        self.selectedOutputUID = prefOut
+                    } else if let sysOut = AudioDevice.getDefaultOutputDevice()?.uid {
+                        // Fallback to system default if preferred device disconnected
+                        self.selectedOutputUID = sysOut
+                        SettingsStore.shared.preferredOutputDeviceUID = sysOut
                     }
-                    self.resetPendingShortcutState()
-                    DebugLogger.shared.debug("NSEvent monitor: Finished recording shortcut", source: "ContentView")
-                    return nil
-                } else if event.type == .flagsChanged {
-                    guard isRecordingAnyShortcut else {
-                        self.shortcutRecordingMessage = nil
-                        self.resetPendingShortcutState()
-                        return event
-                    }
-
-                    let changedModifierFlag = HotkeyShortcut.modifierFlag(forKeyCode: event.keyCode)
-
-                    if eventModifiers.isEmpty {
-                        if self.pendingModifierOnly, let modifierKeyCode = pendingModifierKeyCode {
-                            let newShortcut = HotkeyShortcut(
-                                keyCode: modifierKeyCode,
-                                modifierFlags: self.pendingModifierFlags,
-                                modifierKeyCodes: Array(self.pendingModifierKeyCodes)
-                            )
-                            DebugLogger.shared.debug("NSEvent monitor: Recording modifier-only shortcut: \(newShortcut.displayString)", source: "ContentView")
-
-                            if let recordingTarget,
-                               let conflictMessage = self.shortcutConflictMessage(for: newShortcut, target: recordingTarget)
-                            {
-                                self.shortcutRecordingMessage = conflictMessage
-                                self.resetPendingShortcutState()
-                                DebugLogger.shared.debug("NSEvent monitor: Modifier shortcut conflict while recording: \(conflictMessage)", source: "ContentView")
-                                return nil
-                            }
-
-                            self.shortcutRecordingMessage = nil
-                            if let recordingTarget {
-                                self.assignRecordedShortcut(newShortcut, to: recordingTarget)
-                            }
-                            self.resetPendingShortcutState()
-                            DebugLogger.shared.debug("NSEvent monitor: Finished recording modifier shortcut", source: "ContentView")
-                            return nil
-                        }
-
-                        self.resetPendingShortcutState()
-                        DebugLogger.shared.debug("NSEvent monitor: Modifiers released without recording, continuing to wait", source: "ContentView")
-                        return nil
-                    }
-
-                    // Keep the actual changed modifier key as the trigger key and preserve
-                    // the full pressed modifier set until the combo is finalized.
-                    if let changedModifierFlag {
-                        let isRelease = self.currentRecordingModifierKeyCodes.contains(event.keyCode)
-
-                        if isRelease {
-                            self.currentRecordingModifierKeyCodes.remove(event.keyCode)
-                        } else if eventModifiers.contains(changedModifierFlag) {
-                            self.currentRecordingModifierKeyCodes.insert(event.keyCode)
-                            self.pendingModifierKeyCodes.insert(event.keyCode)
-                            self.pendingModifierFlags = self.pendingModifierFlags.union(eventModifiers)
-                            self.pendingModifierKeyCode = event.keyCode
-                            self.pendingModifierOnly = true
-                            DebugLogger.shared.debug("NSEvent monitor: Modifier key pressed during recording, pending modifiers: \(self.pendingModifierFlags)", source: "ContentView")
-                        }
-                    }
-                    return nil
                 }
-
-                return event
             }
-        }
-        .onChange(of: self.accessibilityEnabled) { _, enabled in
-            if enabled {
+            .onDisappear {
+                Task { await self.asr.stopWithoutTranscription() }
+                self.cancelPrewarmDictationIfNeeded()
+                // Note: Overlay lifecycle is now managed by MenuBarManager
+                // Note: NotchContentState handlers capture self (a struct value copy) and are
+                // intentionally kept alive so the overlay remains fully functional when the
+                // settings window is closed. No retain cycle risk since ContentView is a value type.
+
+                // Stop accessibility polling
                 self.finishAccessibilityPermissionFlow()
             }
+            .onChange(of: self.hotkeyShortcut) { _, newValue in
+                DebugLogger.shared.debug("Hotkey shortcut changed to \(newValue.displayString)", source: "ContentView")
+                self.hotkeyManager?.updateShortcut(newValue)
 
-            if enabled && self.hotkeyManager != nil && !self.hotkeyManagerInitialized {
-                DebugLogger.shared.debug("Accessibility enabled, reinitializing hotkey manager", source: "ContentView")
-                self.hotkeyManager?.reinitialize()
-            }
-        }
-        .onChange(of: self.selectedModel) { _, newValue in
-            if newValue != "__ADD_MODEL__" {
-                self.selectedModelByProvider[self.currentProvider] = newValue
-                SettingsStore.shared.selectedModelByProvider = self.selectedModelByProvider
-            }
-        }
-        .onChange(of: self.selectedProviderID) { _, newValue in
-            SettingsStore.shared.selectedProviderID = newValue
-        }
-        .onChange(of: self.activeShortcutRecordingTarget) { _, _ in
-            self.hotkeyManager?.resetModifierOnlyShortcutTracking()
-        }
-        .onChange(of: self.isPromptModeShortcutEnabled) { newValue in
-            SettingsStore.shared.promptModeShortcutEnabled = newValue
-            self.hotkeyManager?.updatePromptModeShortcutEnabled(newValue)
-
-            if !newValue {
-                if self.activeShortcutRecordingTarget == .secondaryDictation {
-                    self.clearShortcutRecordingMode()
-                }
-
-                if self.activeRecordingMode == .promptMode {
-                    if self.asr.isRunning {
-                        Task { await self.asr.stopWithoutTranscription() }
-                    }
-                    self.cancelPrewarmDictationIfNeeded()
-                    self.clearActiveRecordingMode()
-                    self.menuBarManager.setOverlayMode(.dictation)
+                // Update initialization status after shortcut change
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self.hotkeyManagerInitialized = self.hotkeyManager?.validateEventTapHealth() ?? false
+                    DebugLogger.shared.debug(
+                        "Hotkey manager initialized: \(self.hotkeyManagerInitialized)",
+                        source: "ContentView"
+                    )
                 }
             }
-        }
-        .onChange(of: self.isCommandModeShortcutEnabled) { newValue in
-            SettingsStore.shared.commandModeShortcutEnabled = newValue
-            self.hotkeyManager?.updateCommandModeShortcutEnabled(newValue)
+            .onChange(of: self.selectedSidebarItem) { _, newValue in
+                self.handleModeTransition(from: self.previousSidebarItem, to: newValue)
+                self.previousSidebarItem = newValue
+            }
+    }
 
-            if !newValue {
-                if self.activeShortcutRecordingTarget == .command {
-                    self.clearShortcutRecordingMode()
+    private func applyShortcutStateChanges<Content: View>(to view: Content) -> some View {
+        view
+            .onAppear {
+                self.handleContentAppear()
+            }
+            .onChange(of: self.accessibilityEnabled) { _, enabled in
+                if enabled {
+                    self.finishAccessibilityPermissionFlow()
                 }
 
-                if self.activeRecordingMode == .command {
-                    if self.asr.isRunning {
-                        Task { await self.asr.stopWithoutTranscription() }
-                    }
-                    self.cancelPrewarmDictationIfNeeded()
-                    self.clearActiveRecordingMode()
-                    self.menuBarManager.setOverlayMode(.dictation)
+                if enabled && self.hotkeyManager != nil && !self.hotkeyManagerInitialized {
+                    DebugLogger.shared.debug("Accessibility enabled, reinitializing hotkey manager", source: "ContentView")
+                    self.hotkeyManager?.reinitialize()
                 }
             }
-        }
-        .onChange(of: self.isRewriteModeShortcutEnabled) { newValue in
-            SettingsStore.shared.rewriteModeShortcutEnabled = newValue
-            self.hotkeyManager?.updateRewriteModeShortcutEnabled(newValue)
-
-            if !newValue {
-                if self.activeShortcutRecordingTarget == .edit {
-                    self.clearShortcutRecordingMode()
-                }
-
-                if self.activeRecordingMode == .edit {
-                    if self.asr.isRunning {
-                        Task { await self.asr.stopWithoutTranscription() }
-                    }
-                    self.cancelPrewarmDictationIfNeeded()
-                    self.clearActiveRecordingMode()
-                    self.rewriteModeService.clearState()
-                    self.menuBarManager.setOverlayMode(.dictation)
+            .onChange(of: self.selectedModel) { _, newValue in
+                if newValue != "__ADD_MODEL__" {
+                    self.selectedModelByProvider[self.currentProvider] = newValue
+                    SettingsStore.shared.selectedModelByProvider = self.selectedModelByProvider
                 }
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            let trusted = AXIsProcessTrusted()
-            if trusted != self.accessibilityEnabled {
-                self.accessibilityEnabled = trusted
+            .onChange(of: self.selectedProviderID) { _, newValue in
+                SettingsStore.shared.selectedProviderID = newValue
+            }
+            .onChange(of: self.activeShortcutRecordingTarget) { _, _ in
+                self.hotkeyManager?.resetModifierOnlyShortcutTracking()
+            }
+            .onChange(of: self.isPromptModeShortcutEnabled) { newValue in
+                self.handlePromptShortcutEnabledChange(newValue)
+            }
+            .onChange(of: self.isCommandModeShortcutEnabled) { newValue in
+                self.handleCommandShortcutEnabledChange(newValue)
+            }
+            .onChange(of: self.isRewriteModeShortcutEnabled) { newValue in
+                self.handleRewriteShortcutEnabledChange(newValue)
+            }
+    }
+
+    private func handlePromptShortcutEnabledChange(_ isEnabled: Bool) {
+        SettingsStore.shared.promptModeShortcutEnabled = isEnabled
+        self.hotkeyManager?.updatePromptModeShortcutEnabled(isEnabled)
+
+        if !isEnabled {
+            if self.activeShortcutRecordingTarget == .secondaryDictation {
+                self.clearShortcutRecordingMode()
+            }
+
+            if self.activeRecordingMode == .promptMode {
+                if self.asr.isRunning {
+                    Task { await self.asr.stopWithoutTranscription() }
+                }
+                self.cancelPrewarmDictationIfNeeded()
+                self.clearActiveRecordingMode()
+                self.menuBarManager.setOverlayMode(.dictation)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .openCustomDictionaryFromVoiceEngine)) { _ in
-            self.selectedSidebarItem = .customDictionary
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .appNavigationRequested)) { _ in
-            self.handlePendingAppNavigation()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .settingsBackupDidRestore)) { _ in
-            self.reloadSettingsStateAfterBackupRestore()
-        }
-        .toolbar {
-            if !self.settings.shouldShowOnboarding {
-                ToolbarItemGroup(placement: .primaryAction) {
-                    self.themePreferenceButton
+    }
 
-                    Button(action: self.openIssueReportingPage) {
-                        Image(systemName: "ladybug.fill")
-                    }
-                    .help("Report an issue")
-                    .accessibilityLabel("Report an issue")
+    private func handleCommandShortcutEnabledChange(_ isEnabled: Bool) {
+        SettingsStore.shared.commandModeShortcutEnabled = isEnabled
+        self.hotkeyManager?.updateCommandModeShortcutEnabled(isEnabled)
+
+        if !isEnabled {
+            if self.activeShortcutRecordingTarget == .command {
+                self.clearShortcutRecordingMode()
+            }
+
+            if self.activeRecordingMode == .command {
+                if self.asr.isRunning {
+                    Task { await self.asr.stopWithoutTranscription() }
                 }
+                self.cancelPrewarmDictationIfNeeded()
+                self.clearActiveRecordingMode()
+                self.menuBarManager.setOverlayMode(.dictation)
             }
         }
-        .toolbar(removing: .sidebarToggle)
-        .overlay(alignment: .center) {}
-        .alert(
-            self.asr.errorTitle,
-            isPresented: Binding(
-                get: { self.asr.showError },
-                set: { self.asr.showError = $0 }
-            )
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(self.asr.errorMessage)
-        }
-        .onChange(of: self.audioObserver.changeTick) { _, _ in
-            // Hardware change detected → refresh device lists
-            self.refreshDevices()
+    }
 
-            // Only sync UI with system defaults when sync is enabled
-            // When sync is disabled, keep the user's preferred device selection
-            if SettingsStore.shared.syncAudioDevicesWithSystem {
-                // Sync mode: Update UI to match current system defaults
-                if let sysIn = AudioDevice.getDefaultInputDevice()?.uid {
-                    self.selectedInputUID = sysIn
-                }
-                if let sysOut = AudioDevice.getDefaultOutputDevice()?.uid {
-                    self.selectedOutputUID = sysOut
-                }
-            } else {
-                // Independent mode: Only update if preferred device is no longer available
-                if let prefIn = SettingsStore.shared.preferredInputDeviceUID,
-                   inputDevices.contains(where: { $0.uid == prefIn })
-                {
-                    self.selectedInputUID = prefIn
-                } else if let sysIn = AudioDevice.getDefaultInputDevice()?.uid {
-                    // Fallback to system default if preferred device disconnected
-                    self.selectedInputUID = sysIn
-                    SettingsStore.shared.preferredInputDeviceUID = sysIn
-                }
+    private func handleRewriteShortcutEnabledChange(_ isEnabled: Bool) {
+        SettingsStore.shared.rewriteModeShortcutEnabled = isEnabled
+        self.hotkeyManager?.updateRewriteModeShortcutEnabled(isEnabled)
 
-                if let prefOut = SettingsStore.shared.preferredOutputDeviceUID,
-                   outputDevices.contains(where: { $0.uid == prefOut })
-                {
-                    self.selectedOutputUID = prefOut
-                } else if let sysOut = AudioDevice.getDefaultOutputDevice()?.uid {
-                    // Fallback to system default if preferred device disconnected
-                    self.selectedOutputUID = sysOut
-                    SettingsStore.shared.preferredOutputDeviceUID = sysOut
+        if !isEnabled {
+            if self.activeShortcutRecordingTarget == .edit {
+                self.clearShortcutRecordingMode()
+            }
+
+            if self.activeRecordingMode == .edit {
+                if self.asr.isRunning {
+                    Task { await self.asr.stopWithoutTranscription() }
                 }
+                self.cancelPrewarmDictationIfNeeded()
+                self.clearActiveRecordingMode()
+                self.rewriteModeService.clearState()
+                self.menuBarManager.setOverlayMode(.dictation)
             }
         }
-        .onDisappear {
-            Task { await self.asr.stopWithoutTranscription() }
-            self.cancelPrewarmDictationIfNeeded()
-            // Note: Overlay lifecycle is now managed by MenuBarManager
-            // Note: NotchContentState handlers capture self (a struct value copy) and are
-            // intentionally kept alive so the overlay remains fully functional when the
-            // settings window is closed. No retain cycle risk since ContentView is a value type.
+    }
 
-            // Stop accessibility polling
+    private func handleContentAppear() {
+        self.appear = true
+        self.accessibilityEnabled = self.checkAccessibilityPermissions()
+
+        self.handleMenuBarNavigation(self.menuBarManager.requestedNavigationDestination)
+        if UserDefaults.standard.bool(forKey: self.accessibilityRestartFlagKey) {
+            UserDefaults.standard.set(false, forKey: self.accessibilityRestartFlagKey)
+            self.showRestartPrompt = false
+        }
+
+        if self.accessibilityEnabled {
             self.finishAccessibilityPermissionFlow()
         }
-        .onChange(of: self.hotkeyShortcut) { _, newValue in
-            DebugLogger.shared.debug("Hotkey shortcut changed to \(newValue.displayString)", source: "ContentView")
-            self.hotkeyManager?.updateShortcut(newValue)
 
-            // Update initialization status after shortcut change
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                self.hotkeyManagerInitialized = self.hotkeyManager?.validateEventTapHealth() ?? false
-                DebugLogger.shared.debug(
-                    "Hotkey manager initialized: \(self.hotkeyManagerInitialized)",
-                    source: "ContentView"
-                )
+        if self.selectedSidebarItem == nil {
+            let isOnboarded = self.asr.isAsrReady || self.asr.modelsExistOnDisk
+            self.selectedSidebarItem = isOnboarded ? .preferences : .welcome
+        }
+        self.handlePendingAppNavigation()
+
+        if !self.accessibilityEnabled {
+            UserDefaults.standard.set(false, forKey: self.hasAutoRestartedForAccessibilityKey)
+        }
+
+        self.menuBarManager.initializeMenuBar()
+        self.scheduleDelayedAudioInitialization()
+        self.configureNotchCallbacks()
+        self.startAccessibilityPolling()
+        self.initializeHotkeyManagerIfNeeded()
+
+        Task {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            await self.preloadASRModel()
+        }
+
+        self.loadProviderState()
+        self.installShortcutCaptureMonitor()
+    }
+
+    private func scheduleDelayedAudioInitialization() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            DebugLogger.shared.info("🚦 Startup delay complete, signaling UI ready...", source: "ContentView")
+            self.appServices.signalUIReady()
+
+            DebugLogger.shared.info("🔊 Starting delayed audio initialization...", source: "ContentView")
+            self.audioObserver.startObserving()
+            self.asr.initialize()
+            self.menuBarManager.configure(asrService: self.appServices.asr)
+            self.refreshDevices()
+
+            if self.selectedInputUID.isEmpty, let defIn = AudioDevice.getDefaultInputDevice()?.uid {
+                self.selectedInputUID = defIn
+            }
+            if self.selectedOutputUID.isEmpty, let defOut = AudioDevice.getDefaultOutputDevice()?.uid {
+                self.selectedOutputUID = defOut
+            }
+
+            if let systemInputUID = AudioDevice.getDefaultInputDevice()?.uid,
+               self.inputDevices.contains(where: { $0.uid == systemInputUID })
+            {
+                self.selectedInputUID = systemInputUID
+            }
+
+            if let prefOut = SettingsStore.shared.preferredOutputDeviceUID,
+               !prefOut.isEmpty,
+               outputDevices.first(where: { $0.uid == prefOut }) != nil
+            {
+                self.selectedOutputUID = prefOut
+            }
+
+            DebugLogger.shared.info("✅ Audio subsystems initialized", source: "ContentView")
+        }
+    }
+
+    private func configureNotchCallbacks() {
+        NotchOverlayManager.shared.onNotchClicked = {
+            guard NotchOverlayManager.shared.canHandleNotchCommandTap else { return }
+            if NotchOverlayManager.shared.canShowExpandedCommandOutput,
+               !NotchContentState.shared.commandConversationHistory.isEmpty
+            {
+                NotchOverlayManager.shared.showExpandedCommandOutput()
             }
         }
-        .onChange(of: self.selectedSidebarItem) { _, newValue in
-            self.handleModeTransition(from: self.previousSidebarItem, to: newValue)
-            self.previousSidebarItem = newValue
+
+        NotchOverlayManager.shared.onCommandFollowUp = { [weak commandModeService] text in
+            guard NotchOverlayManager.shared.allowsCommandNotchActions else { return }
+            await commandModeService?.processFollowUpCommand(text)
         }
+
+        NotchOverlayManager.shared.onNewChat = { [weak commandModeService] in
+            guard NotchOverlayManager.shared.allowsCommandNotchActions else { return }
+            commandModeService?.createNewChat()
+        }
+
+        NotchOverlayManager.shared.onSwitchChat = { [weak commandModeService] chatID in
+            guard NotchOverlayManager.shared.allowsCommandNotchActions else { return }
+            commandModeService?.switchToChat(id: chatID)
+        }
+
+        NotchOverlayManager.shared.onClearChat = { [weak commandModeService] in
+            guard NotchOverlayManager.shared.allowsCommandNotchActions else { return }
+            commandModeService?.deleteCurrentChat()
+        }
+    }
+
+    private func loadProviderState() {
+        self.selectedProviderID = SettingsStore.shared.selectedProviderID
+        self.updateCurrentProvider()
+
+        self.enableDebugLogs = SettingsStore.shared.enableDebugLogs
+        self.availableModelsByProvider = SettingsStore.shared.availableModelsByProvider
+        self.selectedModelByProvider = SettingsStore.shared.selectedModelByProvider
+        self.providerAPIKeys = SettingsStore.shared.providerAPIKeys
+        self.savedProviders = SettingsStore.shared.savedProviders
+
+        var normalized: [String: [String]] = [:]
+        for (key, models) in self.availableModelsByProvider {
+            let lower = key.lowercased()
+            let newKey = ModelRepository.shared.isBuiltIn(lower) ? lower : (key.hasPrefix("custom:") ? key : "custom:\(key)")
+            let clean = Array(Set(models.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })).sorted()
+            if !clean.isEmpty {
+                normalized[newKey] = clean
+            }
+        }
+        self.availableModelsByProvider = normalized
+        SettingsStore.shared.availableModelsByProvider = normalized
+
+        var normalizedSel: [String: String] = [:]
+        for (key, model) in self.selectedModelByProvider {
+            let lower = key.lowercased()
+            let newKey = ModelRepository.shared.isBuiltIn(lower) ? lower : (key.hasPrefix("custom:") ? key : "custom:\(key)")
+            if let list = normalized[newKey], list.contains(model) {
+                normalizedSel[newKey] = model
+            }
+        }
+        self.selectedModelByProvider = normalizedSel
+        SettingsStore.shared.selectedModelByProvider = normalizedSel
+
+        if let saved = savedProviders.first(where: { $0.id == selectedProviderID }) {
+            self.availableModels = saved.models
+            self.openAIBaseURL = saved.baseURL
+        } else if let stored = availableModelsByProvider[currentProvider], !stored.isEmpty {
+            self.availableModels = stored
+        } else {
+            self.availableModels = ModelRepository.shared.defaultModels(for: self.providerKey(for: self.selectedProviderID))
+        }
+
+        if let sel = selectedModelByProvider[currentProvider], availableModels.contains(sel) {
+            self.selectedModel = sel
+        } else if let first = availableModels.first {
+            self.selectedModel = first
+        }
+    }
+
+    private func installShortcutCaptureMonitor() {
+        NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
+            self.handleShortcutCaptureEvent(event)
+        }
+    }
+
+    private func handleShortcutCaptureEvent(_ event: NSEvent) -> NSEvent? {
+        let eventModifiers = event.modifierFlags.intersection([.function, .command, .option, .control, .shift])
+        let isRecordingAnyShortcut = self.isRecordingAnyShortcutCapture
+        let recordingTarget = self.activeShortcutRecordingTarget
+
+        if event.type == .keyDown {
+            return self.handleShortcutKeyDownEvent(event, modifiers: eventModifiers, isRecordingAnyShortcut: isRecordingAnyShortcut, recordingTarget: recordingTarget)
+        } else if event.type == .flagsChanged {
+            return self.handleShortcutFlagsChangedEvent(event, modifiers: eventModifiers, isRecordingAnyShortcut: isRecordingAnyShortcut, recordingTarget: recordingTarget)
+        }
+
+        return event
+    }
+
+    private func handleShortcutKeyDownEvent(
+        _ event: NSEvent,
+        modifiers eventModifiers: NSEvent.ModifierFlags,
+        isRecordingAnyShortcut: Bool,
+        recordingTarget: ShortcutRecordingTarget?
+    ) -> NSEvent? {
+        guard isRecordingAnyShortcut else {
+            if self.cancelRecordingHotkeyShortcut.matches(keyCode: event.keyCode, modifiers: eventModifiers),
+               self.handleCancelShortcut()
+            {
+                return nil
+            }
+            self.shortcutRecordingMessage = nil
+            self.resetPendingShortcutState()
+            return event
+        }
+
+        let keyCode = event.keyCode
+        if keyCode == 53, recordingTarget != .cancel {
+            DebugLogger.shared.debug("NSEvent monitor: Escape pressed, cancelling shortcut recording", source: "ContentView")
+            self.clearShortcutRecordingMode()
+            return nil
+        }
+
+        let newShortcut = HotkeyShortcut(keyCode: keyCode, modifierFlags: self.pendingModifierFlags.union(eventModifiers))
+        DebugLogger.shared.debug("NSEvent monitor: Recording new shortcut: \(newShortcut.displayString)", source: "ContentView")
+
+        if let recordingTarget,
+           let conflictMessage = self.shortcutConflictMessage(for: newShortcut, target: recordingTarget)
+        {
+            self.shortcutRecordingMessage = conflictMessage
+            self.resetPendingShortcutState()
+            DebugLogger.shared.debug("NSEvent monitor: Shortcut conflict while recording: \(conflictMessage)", source: "ContentView")
+            return nil
+        }
+
+        self.shortcutRecordingMessage = nil
+        if let recordingTarget {
+            self.assignRecordedShortcut(newShortcut, to: recordingTarget)
+        }
+        self.resetPendingShortcutState()
+        DebugLogger.shared.debug("NSEvent monitor: Finished recording shortcut", source: "ContentView")
+        return nil
+    }
+
+    private func handleShortcutFlagsChangedEvent(
+        _ event: NSEvent,
+        modifiers eventModifiers: NSEvent.ModifierFlags,
+        isRecordingAnyShortcut: Bool,
+        recordingTarget: ShortcutRecordingTarget?
+    ) -> NSEvent? {
+        guard isRecordingAnyShortcut else {
+            self.shortcutRecordingMessage = nil
+            self.resetPendingShortcutState()
+            return event
+        }
+
+        let changedModifierFlag = HotkeyShortcut.modifierFlag(forKeyCode: event.keyCode)
+
+        if eventModifiers.isEmpty {
+            if self.pendingModifierOnly, let modifierKeyCode = pendingModifierKeyCode {
+                let newShortcut = HotkeyShortcut(
+                    keyCode: modifierKeyCode,
+                    modifierFlags: self.pendingModifierFlags,
+                    modifierKeyCodes: Array(self.pendingModifierKeyCodes)
+                )
+                DebugLogger.shared.debug("NSEvent monitor: Recording modifier-only shortcut: \(newShortcut.displayString)", source: "ContentView")
+
+                if let recordingTarget,
+                   let conflictMessage = self.shortcutConflictMessage(for: newShortcut, target: recordingTarget)
+                {
+                    self.shortcutRecordingMessage = conflictMessage
+                    self.resetPendingShortcutState()
+                    DebugLogger.shared.debug("NSEvent monitor: Modifier shortcut conflict while recording: \(conflictMessage)", source: "ContentView")
+                    return nil
+                }
+
+                self.shortcutRecordingMessage = nil
+                if let recordingTarget {
+                    self.assignRecordedShortcut(newShortcut, to: recordingTarget)
+                }
+                self.resetPendingShortcutState()
+                DebugLogger.shared.debug("NSEvent monitor: Finished recording modifier shortcut", source: "ContentView")
+                return nil
+            }
+
+            self.resetPendingShortcutState()
+            DebugLogger.shared.debug("NSEvent monitor: Modifiers released without recording, continuing to wait", source: "ContentView")
+            return nil
+        }
+
+        if let changedModifierFlag {
+            let isRelease = self.currentRecordingModifierKeyCodes.contains(event.keyCode)
+
+            if isRelease {
+                self.currentRecordingModifierKeyCodes.remove(event.keyCode)
+            } else if eventModifiers.contains(changedModifierFlag) {
+                self.currentRecordingModifierKeyCodes.insert(event.keyCode)
+                self.pendingModifierKeyCodes.insert(event.keyCode)
+                self.pendingModifierFlags = self.pendingModifierFlags.union(eventModifiers)
+                self.pendingModifierKeyCode = event.keyCode
+                self.pendingModifierOnly = true
+                DebugLogger.shared.debug("NSEvent monitor: Modifier key pressed during recording, pending modifiers: \(self.pendingModifierFlags)", source: "ContentView")
+            }
+        }
+        return nil
     }
 
     // MARK: - Analytics helpers
@@ -863,7 +882,6 @@ struct ContentView: View {
     private func shortcutConflictMessage(for shortcut: HotkeyShortcut, target: ShortcutRecordingTarget) -> String? {
         let configuredShortcuts: [(ShortcutRecordingTarget, HotkeyShortcut)] = [
             (.primaryDictation, self.hotkeyShortcut),
-            (.secondaryDictation, self.promptModeHotkeyShortcut),
             (.command, self.commandModeHotkeyShortcut),
             (.edit, self.rewriteModeHotkeyShortcut),
             (.cancel, self.cancelRecordingHotkeyShortcut),
@@ -872,6 +890,18 @@ struct ContentView: View {
         for (otherTarget, configuredShortcut) in configuredShortcuts where otherTarget != target {
             if configuredShortcut == shortcut {
                 return "Duplicate with \(otherTarget.title)"
+            }
+        }
+
+        let targetPromptKey = target.promptConfigurationKey
+        for assignment in SettingsStore.shared.dictationPromptShortcutAssignments() {
+            guard let key = SettingsStore.shared.dictationPromptConfigurationKey(for: assignment.selection),
+                  key != targetPromptKey
+            else {
+                continue
+            }
+            if assignment.shortcut == shortcut {
+                return "Duplicate with Prompt Shortcut"
             }
         }
 
@@ -907,6 +937,18 @@ struct ContentView: View {
         case .cancel:
             self.cancelRecordingHotkeyShortcut = shortcut
             SettingsStore.shared.cancelRecordingHotkeyShortcut = shortcut
+        case let .dictationPrompt(key):
+            guard let selection = SettingsStore.shared.dictationPromptSelection(forConfigurationKey: key) else { return }
+            var configuration = SettingsStore.shared.dictationPromptConfiguration(for: selection)
+            configuration.shortcut = shortcut
+            SettingsStore.shared.setDictationPromptConfiguration(configuration, for: selection)
+            self.hotkeyManager?.updatePromptShortcutAssignments(SettingsStore.shared.dictationPromptShortcutAssignments())
+        case .newPrompt:
+            NotificationCenter.default.post(
+                name: .newPromptShortcutRecorded,
+                object: nil,
+                userInfo: ["shortcut": shortcut]
+            )
         }
     }
 
@@ -924,7 +966,7 @@ struct ContentView: View {
             self.isRewriteModeShortcutEnabled = enabled
             SettingsStore.shared.rewriteModeShortcutEnabled = enabled
             self.hotkeyManager?.updateRewriteModeShortcutEnabled(enabled)
-        case .primaryDictation, .cancel:
+        case .primaryDictation, .cancel, .dictationPrompt, .newPrompt:
             break
         }
     }
@@ -1046,7 +1088,9 @@ struct ContentView: View {
         case .aiEnhancements:
             return AnyView(AIEnhancementSettingsScreen(
                 menuBarManager: self.menuBarManager,
-                theme: self.theme
+                theme: self.theme,
+                activeShortcutRecordingTarget: self.$activeShortcutRecordingTarget,
+                shortcutRecordingMessage: self.$shortcutRecordingMessage
             ))
         case .preferences:
             return AnyView(self.preferencesView)
@@ -1240,8 +1284,6 @@ struct ContentView: View {
             hotkeyShortcut: self.$hotkeyShortcut,
             activeShortcutRecordingTarget: self.$activeShortcutRecordingTarget,
             shortcutRecordingMessage: self.$shortcutRecordingMessage,
-            promptModeShortcut: self.$promptModeHotkeyShortcut,
-            promptModeShortcutEnabled: self.$isPromptModeShortcutEnabled,
             commandModeShortcut: self.$commandModeHotkeyShortcut,
             rewriteShortcut: self.$rewriteModeHotkeyShortcut,
             cancelRecordingShortcut: self.$cancelRecordingHotkeyShortcut,
@@ -2814,6 +2856,7 @@ struct ContentView: View {
             promptModeShortcut: self.promptModeHotkeyShortcut,
             commandModeShortcut: self.commandModeHotkeyShortcut,
             rewriteModeShortcut: self.rewriteModeHotkeyShortcut,
+            promptShortcutAssignments: SettingsStore.shared.dictationPromptShortcutAssignments(),
             promptModeShortcutEnabled: self.isPromptModeShortcutEnabled,
             commandModeShortcutEnabled: self.isCommandModeShortcutEnabled,
             rewriteModeShortcutEnabled: self.isRewriteModeShortcutEnabled,
@@ -2837,6 +2880,10 @@ struct ContentView: View {
             promptModeCallback: {
                 DebugLogger.shared.info("Prompt mode triggered", source: "ContentView")
                 self.beginDictationRecording(for: .secondary, mode: .promptMode)
+            },
+            promptSelectionCallback: { selection in
+                DebugLogger.shared.info("Prompt selection shortcut triggered", source: "ContentView")
+                self.beginDictationRecording(for: selection, mode: .promptMode)
             },
             commandModeCallback: {
                 DebugLogger.shared.info("Command mode triggered", source: "ContentView")
@@ -3194,6 +3241,7 @@ extension ContentView {
             self.playgroundUsed = false
         }
         self.captureRecordingContext()
+        self.applyDictationPromptConfiguration(for: SettingsStore.shared.dictationPromptSelection(for: slot))
         self.applyDictationShortcutSelectionContext(for: slot)
         self.setActiveRecordingMode(mode)
         self.rewriteModeService.clearState()
@@ -3223,6 +3271,38 @@ extension ContentView {
                 source: "AppBenchmark"
             )
         }
+    }
+
+    private func beginDictationRecording(for selection: SettingsStore.DictationPromptSelection, mode: ActiveRecordingMode) {
+        let settings = SettingsStore.shared
+        settings.setDictationPromptSelection(selection, for: .secondary)
+        self.applyDictationPromptConfiguration(for: selection)
+        self.beginDictationRecording(for: .secondary, mode: mode)
+    }
+
+    private func applyDictationPromptConfiguration(for selection: SettingsStore.DictationPromptSelection) {
+        let providerID: String
+        let modelName: String
+
+        if selection == .privateAI {
+            providerID = PrivateAIProviderFeature.shared.providerID
+            modelName = PrivateAIIntegrationService.configuredModelID
+        } else {
+            let configuration = SettingsStore.shared.dictationPromptConfiguration(for: selection)
+            providerID = configuration.providerID.trimmingCharacters(in: .whitespacesAndNewlines)
+            modelName = configuration.modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !providerID.isEmpty, !modelName.isEmpty else { return }
+        }
+
+        let providerKey = self.providerKey(for: providerID)
+        SettingsStore.shared.selectedProviderID = providerID
+        var selectedModels = SettingsStore.shared.selectedModelByProvider
+        selectedModels[providerKey] = modelName
+        SettingsStore.shared.selectedModelByProvider = selectedModels
+        self.selectedProviderID = providerID
+        self.currentProvider = providerKey
+        self.selectedModelByProvider = selectedModels
+        self.selectedModel = modelName
     }
 
     private func appBench(_ message: String) {
@@ -3270,7 +3350,7 @@ extension ContentView {
     }
 
     private var onboardingAIReady: Bool {
-        self.settings.onboardingAISkipped || DictationAIPostProcessingGate.isConfigured()
+        self.settings.onboardingAISkipped || DictationAIPostProcessingGate.isProviderConfigured()
     }
 
     private var onboardingPlaygroundReady: Bool {
@@ -3820,6 +3900,7 @@ private extension ContentView {
         self.hotkeyManager?.updateShortcut(self.hotkeyShortcut)
         self.hotkeyManager?.updatePromptModeShortcut(self.promptModeHotkeyShortcut)
         self.hotkeyManager?.updatePromptModeShortcutEnabled(self.isPromptModeShortcutEnabled)
+        self.hotkeyManager?.updatePromptShortcutAssignments(SettingsStore.shared.dictationPromptShortcutAssignments())
         self.hotkeyManager?.updateCommandModeShortcut(self.commandModeHotkeyShortcut)
         self.hotkeyManager?.updateCommandModeShortcutEnabled(self.isCommandModeShortcutEnabled)
         self.hotkeyManager?.updateRewriteModeShortcut(self.rewriteModeHotkeyShortcut)

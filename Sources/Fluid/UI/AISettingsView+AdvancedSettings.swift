@@ -8,35 +8,82 @@
 import AppKit
 import SwiftUI
 
+private struct PromptCardAssignments {
+    let isDefault: Bool
+    let shortcutDisplay: String?
+    let modelPicker: PromptCardModelPicker?
+    let onMakeDefault: () -> Void
+}
+
+private struct PromptCardModelPicker {
+    let summary: String
+    let selectedModel: String
+    let models: [String]
+    let providerName: String
+    let onSelectModel: (String) -> Void
+    let onOpenProviders: () -> Void
+}
+
 extension AIEnhancementSettingsView {
     // MARK: - Advanced Settings Card
 
     var advancedSettingsCard: some View {
-        ThemedCard(style: .prominent, hoverEffect: false) {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        HStack(alignment: .firstTextBaseline, spacing: 0) {
-                            Text("Prompt Profiles")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(self.theme.palette.primaryText)
-                            Text(" - Manage prompt bodies here. Shortcut assignment lives in Keyboard Shortcuts.")
-                                .font(.system(size: 13))
-                                .foregroundStyle(self.theme.palette.secondaryText)
-                        }
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    }
-
-                    self.promptControlsRow
-                    self.promptModeViewport(mode: self.selectedPromptMode)
-                }
-                .padding(.horizontal, 4)
-            }
-            .padding(14)
+        VStack(alignment: .leading, spacing: 14) {
+            self.promptModeViewport(mode: .dictate)
         }
         .sheet(item: self.$viewModel.promptEditorMode) { mode in
             self.promptEditorSheet(mode: mode)
+        }
+    }
+
+    var promptProfilesHelpPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 9) {
+                Image(systemName: "text.bubble.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.fluidGreen)
+                    .frame(width: 26, height: 26)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.fluidGreen.opacity(0.12))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(Color.fluidGreen.opacity(0.24), lineWidth: 1)
+                            )
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Prompt Profiles")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(self.theme.palette.primaryText)
+                    Text("Choose the prompt behavior for dictation.")
+                        .font(.caption)
+                        .foregroundStyle(self.theme.palette.secondaryText)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                self.promptProfilesHelpRow("Built-in is the normal prompt. Assign any prompt as Primary to use it with your main hotkey.")
+                self.promptProfilesHelpRow("\(PrivateAIProviderFeature.displayName) uses its own local prompt.")
+                self.promptProfilesHelpRow("Custom prompts can be assigned globally, by app, or by shortcut.")
+            }
+        }
+        .padding(14)
+        .frame(width: 310, alignment: .leading)
+        .background(self.theme.palette.cardBackground)
+    }
+
+    private func promptProfilesHelpRow(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Circle()
+                .fill(Color.fluidGreen.opacity(0.75))
+                .frame(width: 4, height: 4)
+                .padding(.top, 6)
+
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(self.theme.palette.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -52,111 +99,100 @@ extension AIEnhancementSettingsView {
             }
     }
 
-    func promptProfileCard(
+    private func promptProfileCard(
         cardKey: String,
         title: String,
         subtitle: String,
         mode: SettingsStore.PromptMode,
         isSelected: Bool,
-        onUse: @escaping () -> Void,
+        assignments: PromptCardAssignments? = nil,
+        notice: String? = nil,
         onManage: (() -> Void)? = nil,
-        onResetDefault: (() -> Void)? = nil,
-        canResetDefault: Bool = false,
         onDelete: (() -> Void)? = nil,
         isEnabled: Bool = true
     ) -> some View {
-        let tone = self.modeAccentColor(mode)
-        let selectedStrokeOpacity: Double = mode.normalized == .dictate ? 0.52 : 0.38
+        let tone = Color.fluidGreen
         let isHovering = self.hoveredPromptCardKey == cardKey
-        return HStack(alignment: .center, spacing: 10) {
-            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                .fill(isHovering ? tone.opacity(0.5) : .clear)
-                .frame(width: 3, height: 34)
+        let isDefaultRow = assignments?.isDefault == true
+        let isSelectedRow = isDefaultRow || (assignments == nil && isSelected)
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
 
-            Button(action: {
-                guard isEnabled else { return }
-                onUse()
-            }) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(self.theme.palette.primaryText)
-                        if mode.normalized == .edit {
-                            Text("Context: Auto")
-                                .font(.caption2)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                        .fill(tone.opacity(0.12))
-                                )
-                                .foregroundStyle(tone)
+        return VStack(spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
+                self.promptCardIcon(
+                    title: title,
+                    mode: mode,
+                    isSelected: isSelectedRow,
+                    tone: tone
+                )
+
+                self.promptCardTitleBlock(
+                    title: title,
+                    subtitle: subtitle,
+                    mode: mode,
+                    isSelected: isSelected,
+                    assignments: assignments,
+                    notice: notice,
+                    tone: tone
+                )
+
+                Spacer(minLength: 10)
+
+                HStack(spacing: 8) {
+                    if let onManage {
+                        Button {
+                            onManage()
+                        } label: {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.system(size: 12, weight: .semibold))
+                                .frame(width: AISettingsLayout.providerRowControlHeight, height: AISettingsLayout.providerRowControlHeight)
                         }
+                        .buttonStyle(SquareIconButtonStyle())
+                        .disabled(!isEnabled)
+                        .help("Configure")
                     }
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .multilineTextAlignment(.leading)
+
+                    if let onDelete {
+                        Button(role: .destructive) {
+                            onDelete()
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 12, weight: .semibold))
+                                .frame(width: AISettingsLayout.providerRowControlHeight, height: AISettingsLayout.providerRowControlHeight)
+                        }
+                        .buttonStyle(SquareIconButtonStyle(foreground: .red, borderColor: .red.opacity(0.5)))
+                        .disabled(!isEnabled)
+                        .help("Delete")
+                    } else {
+                        Color.clear
+                            .frame(width: AISettingsLayout.providerRowControlHeight, height: AISettingsLayout.providerRowControlHeight)
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                .fixedSize(horizontal: true, vertical: false)
             }
-            .buttonStyle(.plain)
-            .disabled(!isEnabled)
 
-            Spacer(minLength: 8)
-
-            HStack(spacing: 10) {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(isSelected ? tone : self.theme.palette.secondaryText.opacity(0.35))
-                    .frame(width: 18, height: 18)
-
-                if onManage != nil || onResetDefault != nil || onDelete != nil {
-                    Menu {
-                        if let onManage {
-                            Button("Edit Prompt") { onManage() }
-                        }
-                        if mode == .edit {
-                            Divider()
-                            Text("Selected text context is added automatically when text is selected.")
-                        }
-                        if let onDelete {
-                            Divider()
-                            Button(role: .destructive, action: { onDelete() }) {
-                                Label("Delete Prompt", systemImage: "trash")
-                            }
-                        } else if let onResetDefault {
-                            Divider()
-                            Button("Reset to Built-in Default", role: .destructive) { onResetDefault() }
-                                .disabled(!canResetDefault)
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 14, weight: .semibold))
-                            .frame(width: AISettingsLayout.controlHeight, height: AISettingsLayout.controlHeight)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(self.theme.palette.secondaryText)
-                    .disabled(!isEnabled)
-                }
+            // Line 2: config metadata chips
+            if let assignments {
+                self.promptCardMetadataChips(
+                    assignments: assignments,
+                    tone: tone,
+                    isEnabled: isEnabled
+                )
             }
         }
-        .padding(12)
-        .opacity(isEnabled ? 1 : 0.48)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 9)
+        .frame(minHeight: 86)
+        .opacity(isEnabled ? 1 : 0.68)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(self.theme.palette.cardBackground.opacity(0.64))
+            shape
+                .fill(self.theme.palette.cardBackground.opacity(0.7))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(isHovering ? tone.opacity(mode.normalized == .dictate ? 0.06 : 0.045) : .clear)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(isHovering ? tone.opacity(selectedStrokeOpacity) : self.theme.palette.cardBorder.opacity(0.3), lineWidth: 1)
+                    shape
+                        .stroke(
+                            isSelectedRow ? Color.fluidGreen : (isHovering ? self.theme.palette.cardBorder.opacity(0.5) : self.theme.palette.cardBorder.opacity(0.3)),
+                            lineWidth: isSelectedRow ? 2 : 1
+                        )
                 )
         )
         .onHover { hovering in
@@ -169,53 +205,678 @@ extension AIEnhancementSettingsView {
         .animation(.easeOut(duration: 0.1), value: isHovering)
     }
 
-    private var promptControlsRow: some View {
-        ZStack {
-            HStack(alignment: .center, spacing: 12) {
-                Button("+ Add Prompt") {
-                    self.viewModel.openNewPromptEditor(prefillMode: self.selectedPromptMode)
-                }
-                .fluidCompactButton(isReady: true)
-                .frame(minWidth: AISettingsLayout.actionMinWidth, minHeight: AISettingsLayout.controlHeight)
-
-                Spacer(minLength: 8)
-
-                self.promptProcessingControl
-            }
-
-            self.promptModeTabSelector
+    private func promptCardIcon(
+        title: String,
+        mode: SettingsStore.PromptMode,
+        isSelected: Bool,
+        tone: Color
+    ) -> some View {
+        let symbol: String
+        if title == PrivateAIProviderFeature.displayName {
+            symbol = "sparkles"
+        } else if title.localizedCaseInsensitiveContains("default") {
+            symbol = "text.bubble.fill"
+        } else {
+            symbol = mode.normalized == .dictate ? "quote.bubble.fill" : "text.cursor"
         }
-        .frame(maxWidth: .infinity)
+
+        return ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(self.theme.palette.contentBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(isSelected ? Color.fluidGreen.opacity(0.5) : self.theme.palette.cardBorder.opacity(0.5), lineWidth: 1)
+                )
+
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isSelected ? Color.fluidGreen : self.theme.palette.secondaryText)
+        }
+        .frame(width: 34, height: 34)
+        .accessibilityHidden(true)
     }
 
-    private var promptProcessingControl: some View {
-        let mode = self.selectedPromptMode.normalized
-        let isPrivateAILocked = mode == .dictate && self.viewModel.isPrivateAIModelSelected()
-        let isOff = self.viewModel.isPromptSelectionOff(for: mode)
-        let helpText: String = {
-            if isOff {
-                switch mode {
-                case .dictate:
-                    return "Off: dictation types the raw transcript. Prompts and app overrides are paused."
-                case .edit, .write, .rewrite:
-                    return "Off: Edit Text uses the built-in prompt. Custom prompts and app overrides are paused."
+    private func promptCardTitleBlock(
+        title: String,
+        subtitle: String,
+        mode: SettingsStore.PromptMode,
+        isSelected: Bool,
+        assignments: PromptCardAssignments?,
+        notice: String?,
+        tone: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(self.theme.palette.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                self.promptStatusTags(
+                    assignments: assignments,
+                    isSelected: isSelected,
+                    mode: mode,
+                    tone: tone
+                )
+            }
+
+            if let notice {
+                self.promptNoticeRow(notice)
+            } else if !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .multilineTextAlignment(.leading)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func promptCardMetadataChips(
+        assignments: PromptCardAssignments,
+        tone: Color,
+        isEnabled: Bool
+    ) -> some View {
+        HStack(spacing: 6) {
+            // Provider chip
+            if let modelPicker = assignments.modelPicker, !modelPicker.providerName.isEmpty {
+                self.promptConfigChip(
+                    systemImage: "server.rack",
+                    text: modelPicker.providerName,
+                    tone: tone
+                )
+            }
+
+            // Model chip
+            if let modelPicker = assignments.modelPicker, !modelPicker.summary.isEmpty {
+                self.promptConfigChip(
+                    systemImage: "cpu",
+                    text: modelPicker.selectedModel.isEmpty
+                        ? (modelPicker.providerName.isEmpty ? "No model" : modelPicker.summary)
+                        : modelPicker.selectedModel,
+                    tone: tone
+                )
+            }
+
+            // Shortcut chip
+            if let shortcutDisplay = assignments.shortcutDisplay {
+                self.promptConfigChip(
+                    systemImage: "keyboard",
+                    text: shortcutDisplay,
+                    tone: tone
+                )
+            } else {
+                self.promptConfigChip(
+                    systemImage: "keyboard",
+                    text: "No shortcut",
+                    tone: self.theme.palette.tertiaryText,
+                    isGhost: true
+                )
+            }
+
+            Spacer(minLength: 0)
+        }
+        .opacity(isEnabled ? 1 : 0.68)
+    }
+
+    private func promptConfigChip(
+        systemImage: String,
+        text: String,
+        tone: Color,
+        isGhost: Bool = false
+    ) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .font(.system(size: 9, weight: .semibold))
+            Text(text)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(isGhost ? self.theme.palette.tertiaryText : tone)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule(style: .continuous)
+                .fill(self.theme.palette.contentBackground)
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 1)
+                )
+        )
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func promptNoticeRow(_ text: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 10, weight: .semibold))
+            Text(text)
+                .font(.caption2.weight(.medium))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .foregroundStyle(self.theme.palette.secondaryText)
+    }
+
+    @ViewBuilder
+    private func promptStatusTags(
+        assignments: PromptCardAssignments?,
+        isSelected: Bool,
+        mode: SettingsStore.PromptMode,
+        tone: Color
+    ) -> some View {
+        if assignments == nil, isSelected {
+            Text("Selected")
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.fluidGreen.opacity(0.2)))
+                .foregroundStyle(Color.fluidGreen)
+        }
+
+        if mode.normalized == .edit {
+            Text("Context: Auto")
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.fluidGreen.opacity(0.2)))
+                .foregroundStyle(Color.fluidGreen)
+        }
+    }
+
+    private func promptStatusBadge(
+        _ title: String,
+        systemImage: String,
+        tone: Color,
+        isProminent: Bool
+    ) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption2.weight(.semibold))
+            .labelStyle(.titleAndIcon)
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(self.theme.palette.contentBackground)
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(tone.opacity(isProminent ? 0.5 : 0.3), lineWidth: 1)
+                    )
+            )
+            .foregroundStyle(tone)
+    }
+
+    private func promptAssignments(
+        selection: SettingsStore.DictationPromptSelection,
+        isPrivateAI: Bool = false
+    ) -> PromptCardAssignments {
+        let configuration = self.settings.dictationPromptConfiguration(for: selection)
+        return PromptCardAssignments(
+            isDefault: self.viewModel.isDictationPromptSelection(selection, for: .primary),
+            shortcutDisplay: configuration.shortcut?.displayString,
+            modelPicker: self.promptModelPicker(selection: selection, isPrivateAI: isPrivateAI),
+            onMakeDefault: {
+                self.viewModel.setDictationPromptSelection(selection, for: .primary)
+            }
+        )
+    }
+
+    private func promptEditorSelection(for mode: PromptEditorMode) -> SettingsStore.DictationPromptSelection? {
+        switch mode {
+        case let .defaultPrompt(promptMode):
+            guard promptMode.normalized == .dictate else { return nil }
+            return .default
+        case let .edit(promptID):
+            guard self.viewModel.draftPromptMode.normalized == .dictate else { return nil }
+            return .profile(promptID)
+        case .newPrompt:
+            return nil
+        case .privateAI:
+            return .privateAI
+        }
+    }
+
+    private func preparePromptEditorConfigurationDraft(mode: PromptEditorMode) {
+        self.promptEditorPrimarySelectionDraft = self.viewModel.dictationPromptSelection(for: .primary)
+
+        if case .newPrompt = mode {
+            let pending = self.viewModel.pendingNewPromptConfiguration
+            self.promptEditorOriginalConfiguration = nil
+            self.promptEditorShortcutDraft = pending?.shortcut
+            let providerID = pending?.providerID.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            self.promptEditorProviderIDDraft = providerID.isEmpty
+                ? self.viewModel.defaultVerifiedPromptProviderID()
+                : providerID
+            self.promptEditorModelDraft = pending?.modelName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if self.promptEditorModelDraft.isEmpty, !self.promptEditorProviderIDDraft.isEmpty {
+                self.promptEditorModelDraft = self.viewModel.selectedModel(for: self.promptEditorProviderIDDraft)
+            }
+            return
+        }
+
+        let selection = self.promptEditorSelection(for: mode)
+        let configuration = selection.map { self.settings.dictationPromptConfiguration(for: $0) }
+        self.promptEditorOriginalConfiguration = configuration
+        self.promptEditorShortcutDraft = configuration?.shortcut
+
+        let providerID = configuration?.providerID.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.promptEditorProviderIDDraft = providerID.isEmpty ? self.viewModel.defaultVerifiedPromptProviderID() : providerID
+        self.promptEditorModelDraft = configuration?.modelName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if self.promptEditorModelDraft.isEmpty, !self.promptEditorProviderIDDraft.isEmpty {
+            self.promptEditorModelDraft = self.viewModel.selectedModel(for: self.promptEditorProviderIDDraft)
+        }
+
+        if mode.isPrivateAI {
+            self.promptEditorProviderIDDraft = PrivateAIProviderFeature.shared.providerID
+            self.promptEditorModelDraft = PrivateAIIntegrationService.configuredModelID
+        }
+
+        if mode.isDefault, let promptMode = mode.mode {
+            self.viewModel.draftPromptMode = promptMode.normalized
+        }
+    }
+
+    private func applyPromptEditorConfigurationDraft(mode: PromptEditorMode) {
+        if case .newPrompt = mode {
+            let providerID = self.promptEditorProviderIDDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            let modelName = self.promptEditorModelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.viewModel.pendingNewPromptConfiguration = SettingsStore.DictationPromptConfiguration(
+                shortcut: self.promptEditorShortcutDraft,
+                providerID: providerID,
+                modelName: modelName
+            )
+            return
+        }
+
+        if let selection = self.promptEditorSelection(for: mode) {
+            if self.promptEditorPrimarySelectionDraft == selection {
+                self.viewModel.setDictationPromptSelection(selection, for: .primary)
+            }
+            let providerID = self.promptEditorProviderIDDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            let modelName = self.promptEditorModelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            let configuration = SettingsStore.DictationPromptConfiguration(
+                shortcut: self.promptEditorShortcutDraft,
+                providerID: providerID,
+                modelName: modelName
+            )
+            self.settings.setDictationPromptConfiguration(configuration, for: selection)
+            NotificationCenter.default.post(name: .dictationPromptShortcutsChanged, object: nil)
+        }
+    }
+
+    private func restorePromptEditorConfigurationDraft(mode: PromptEditorMode) {
+        guard let selection = self.promptEditorSelection(for: mode) else { return }
+        if let original = self.promptEditorOriginalConfiguration {
+            self.settings.setDictationPromptConfiguration(original, for: selection)
+        } else {
+            self.settings.removeDictationPromptConfiguration(for: selection)
+        }
+        NotificationCenter.default.post(name: .dictationPromptShortcutsChanged, object: nil)
+    }
+
+    private func promptEditorAssignments(mode: PromptEditorMode) -> PromptCardAssignments? {
+        if case .newPrompt = mode {
+            return PromptCardAssignments(
+                isDefault: false,
+                shortcutDisplay: self.promptEditorShortcutDraft?.displayString,
+                modelPicker: self.promptEditorModelPicker(),
+                onMakeDefault: {
+                    // New prompts can't be the default key until saved
+                }
+            )
+        }
+
+        guard let selection = self.promptEditorSelection(for: mode) else { return nil }
+
+        return PromptCardAssignments(
+            isDefault: self.promptEditorPrimarySelectionDraft == selection,
+            shortcutDisplay: self.promptEditorShortcutDraft?.displayString,
+            modelPicker: self.promptEditorModelPicker(),
+            onMakeDefault: {
+                self.promptEditorPrimarySelectionDraft = selection
+            }
+        )
+    }
+
+    private func promptEditorModelPicker() -> PromptCardModelPicker? {
+        let providerID = self.promptEditorProviderIDDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !providerID.isEmpty else {
+            return PromptCardModelPicker(
+                summary: "Choose provider first",
+                selectedModel: "",
+                models: [],
+                providerName: "",
+                onSelectModel: { _ in },
+                onOpenProviders: {
+                    self.selectedConfigurationSection = .providers
+                    self.expandedProviderID = nil
+                }
+            )
+        }
+
+        let providerName = self.viewModel.providerDisplayName(for: providerID)
+        let selectedModel = self.promptEditorModelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let summary = selectedModel.isEmpty ? providerName : "\(providerName) - \(selectedModel)"
+
+        return PromptCardModelPicker(
+            summary: summary,
+            selectedModel: selectedModel,
+            models: self.viewModel.models(for: providerID),
+            providerName: providerName,
+            onSelectModel: { modelName in
+                self.promptEditorModelDraft = modelName
+                self.syncDraftToPendingConfig()
+            },
+            onOpenProviders: {
+                self.selectedConfigurationSection = .providers
+                self.expandedProviderID = providerID
+            }
+        )
+    }
+
+    private func syncDraftToPendingConfig() {
+        guard self.viewModel.promptEditorMode?.isNewPrompt == true else { return }
+        self.viewModel.pendingNewPromptConfiguration = SettingsStore.DictationPromptConfiguration(
+            shortcut: self.promptEditorShortcutDraft,
+            providerID: self.promptEditorProviderIDDraft.trimmingCharacters(in: .whitespacesAndNewlines),
+            modelName: self.promptEditorModelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    private func shouldShowPromptEditorConfigurationPanel(for mode: PromptEditorMode) -> Bool {
+        if case .newPrompt = mode {
+            return self.viewModel.draftPromptMode.normalized == .dictate
+        }
+        if case .privateAI = mode {
+            return true
+        }
+        return self.promptEditorSelection(for: mode) != nil
+    }
+
+    private func promptEditorConfigurationPanel(mode: PromptEditorMode) -> some View {
+        Grid(alignment: .leading, horizontalSpacing: 28, verticalSpacing: 14) {
+            self.promptEditorShortcutRow(mode: mode)
+            Group {
+                self.promptEditorProviderRow
+                self.promptEditorModelRow
+            }
+            .disabled(mode.isPrivateAI)
+            .opacity(mode.isPrivateAI ? 0.6 : 1)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(self.theme.palette.contentBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(self.theme.palette.cardBorder, lineWidth: 1)
+                )
+        )
+    }
+
+    private func promptEditorShortcutRow(mode: PromptEditorMode) -> some View {
+        let isNewPrompt: Bool = {
+            if case .newPrompt = mode { return true }
+            return false
+        }()
+        let selection = self.promptEditorSelection(for: mode)
+        let configurationKey = selection.flatMap { self.settings.dictationPromptConfigurationKey(for: $0) }
+        let isRecording: Bool = {
+            if isNewPrompt {
+                return self.activeShortcutRecordingTarget == .newPrompt
+            }
+            return configurationKey.map { self.activeShortcutRecordingTarget == .dictationPrompt($0) } ?? false
+        }()
+        let hasShortcut = self.promptEditorShortcutDraft != nil
+
+        return self.promptEditorConfigRow(title: "Custom shortcut", description: "Optional shortcut just for this prompt.") {
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    if isRecording {
+                        Image(systemName: "keyboard")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.orange)
+                        Text("Press shortcut...")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.orange)
+                            .lineLimit(1)
+                    } else if let shortcut = self.promptEditorShortcutDraft {
+                        Image(systemName: "keyboard")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(self.theme.palette.secondaryText)
+                        Text(shortcut.displayString)
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(self.theme.palette.primaryText)
+                            .lineLimit(1)
+                    } else {
+                        Image(systemName: "keyboard")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(self.theme.palette.tertiaryText)
+                        Text("None")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(self.theme.palette.tertiaryText)
+                    }
+                    Spacer(minLength: 4)
+                }
+                .searchablePickerControlChrome(
+                    width: 114,
+                    height: AISettingsLayout.controlHeight,
+                    usesMaterial: true,
+                    showsShadow: true
+                )
+
+                Button {
+                    self.shortcutRecordingMessage = nil
+                    if isNewPrompt {
+                        self.activeShortcutRecordingTarget = .newPrompt
+                    } else if let configurationKey {
+                        self.activeShortcutRecordingTarget = .dictationPrompt(configurationKey)
+                    }
+                } label: {
+                    Text(isRecording ? "Recording..." : "Change")
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                        .frame(width: 70, height: AISettingsLayout.controlHeight)
+                }
+                .fluidCompactButton(isReady: !isRecording)
+                .disabled(isRecording)
+
+                if hasShortcut {
+                    Button {
+                        self.promptEditorShortcutDraft = nil
+                        if isNewPrompt {
+                            if self.activeShortcutRecordingTarget == .newPrompt {
+                                self.activeShortcutRecordingTarget = nil
+                            }
+                        } else if let configurationKey, self.activeShortcutRecordingTarget == .dictationPrompt(configurationKey) {
+                            self.activeShortcutRecordingTarget = nil
+                        }
+                    } label: {
+                        Text("Clear")
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                            .frame(width: 70, height: AISettingsLayout.controlHeight)
+                    }
+                    .fluidCompactButton(foreground: .red, borderColor: .red.opacity(0.5))
+                } else {
+                    Color.clear
+                        .frame(width: 70, height: AISettingsLayout.controlHeight)
                 }
             }
-            if isPrivateAILocked {
-                return "On: \(PrivateAIProviderFeature.displayName) uses the \(PrivateAIProviderFeature.displayName) prompt."
-            }
-            return mode == .dictate ? "On: dictation follows the selected prompt scope." : "On: Edit Text follows the selected prompt scope."
-        }()
-
-        return HStack(alignment: .center, spacing: 7) {
-            Text("AI Enhancement")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(self.theme.palette.secondaryText)
-                .lineLimit(1)
-
-            self.cleanupSegmentedControl(isOff: isOff, mode: mode)
+            .frame(width: AISettingsLayout.promptEditorControlColumnWidth, alignment: .leading)
         }
-        .help(helpText)
+    }
+
+    private var promptEditorProviderRow: some View {
+        self.promptEditorConfigRow(title: "AI provider", description: "Verified providers only.") {
+            Menu {
+                let providers = self.viewModel.verifiedPromptProviders()
+                if providers.isEmpty {
+                    Text("No verified providers")
+                } else {
+                    ForEach(providers) { provider in
+                        Button {
+                            self.promptEditorProviderIDDraft = provider.id
+                            let models = self.viewModel.models(for: provider.id)
+                            if !models.contains(self.promptEditorModelDraft) {
+                                self.promptEditorModelDraft = self.viewModel.selectedModel(for: provider.id)
+                            }
+                            self.syncDraftToPendingConfig()
+                        } label: {
+                            Label(provider.name, systemImage: provider.id == self.promptEditorProviderIDDraft ? "checkmark" : "")
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(self.viewModel.providerDisplayName(for: self.promptEditorProviderIDDraft))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(self.theme.palette.primaryText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 4)
+                    FluidPickerDisclosureIcon(backgroundOpacity: 0.6)
+                }
+                .searchablePickerControlChrome(
+                    width: AISettingsLayout.promptEditorControlColumnWidth,
+                    height: AISettingsLayout.controlHeight,
+                    usesMaterial: true,
+                    showsShadow: true
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var promptEditorModelRow: some View {
+        self.promptEditorConfigRow(title: "Model", description: "Used for this prompt.") {
+            HStack(spacing: 8) {
+                SearchableModelPicker(
+                    models: self.viewModel.models(for: self.promptEditorProviderIDDraft),
+                    selectedModel: self.promptEditorModelBinding,
+                    onRefresh: nil,
+                    selectionEnabled: !self.viewModel.models(for: self.promptEditorProviderIDDraft).isEmpty,
+                    controlWidth: AISettingsLayout.promptEditorControlColumnWidth - AISettingsLayout.providerRowControlHeight - 8,
+                    controlHeight: AISettingsLayout.controlHeight
+                )
+
+                self.companionIconButton(
+                    isRefreshing: self.viewModel.refreshingProviderID == self.promptEditorProviderIDDraft,
+                    disabled: !self.canFetchModels(for: self.promptEditorProviderIDDraft),
+                    opacity: self.canFetchModels(for: self.promptEditorProviderIDDraft) ? 1 : 0.45,
+                    help: "Refresh model list"
+                ) {
+                    Task { await self.viewModel.fetchModels(for: self.promptEditorProviderIDDraft) }
+                }
+            }
+        }
+    }
+
+    private var promptEditorModelBinding: Binding<String> {
+        Binding(
+            get: { self.promptEditorModelDraft },
+            set: { newValue in
+                self.promptEditorModelDraft = newValue
+                self.syncDraftToPendingConfig()
+            }
+        )
+    }
+
+    private func promptEditorConfigRow<Content: View>(
+        title: String,
+        description: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        GridRow(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(self.theme.palette.primaryText)
+                Text(description)
+                    .font(.system(size: 11))
+                    .foregroundStyle(self.theme.palette.secondaryText)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .gridColumnAlignment(.leading)
+            .frame(width: AISettingsLayout.promptEditorLabelColumnWidth, alignment: .leading)
+
+            content()
+                .gridColumnAlignment(.leading)
+                .frame(width: AISettingsLayout.promptEditorControlColumnWidth, alignment: .leading)
+        }
+    }
+
+    private func promptModelPicker(
+        selection: SettingsStore.DictationPromptSelection,
+        isPrivateAI: Bool
+    ) -> PromptCardModelPicker? {
+        if isPrivateAI {
+            return PromptCardModelPicker(
+                summary: "fluid-1",
+                selectedModel: PrivateAIIntegrationService.configuredModelID,
+                models: PrivateAIModelRegistry.modelIDs(),
+                providerName: PrivateAIProviderFeature.displayName,
+                onSelectModel: { _ in
+                    self.selectedConfigurationSection = .providers
+                    self.expandedProviderID = PrivateAIProviderFeature.shared.providerID
+                },
+                onOpenProviders: {
+                    self.selectedConfigurationSection = .providers
+                    self.expandedProviderID = PrivateAIProviderFeature.shared.providerID
+                }
+            )
+        }
+
+        guard !self.viewModel.isPrivateAIModelSelected() else { return nil }
+        let configuration = self.settings.dictationPromptConfiguration(for: selection)
+        let configuredProviderID = configuration.providerID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let providerID = configuredProviderID.isEmpty
+            ? self.viewModel.selectedProviderID.trimmingCharacters(in: .whitespacesAndNewlines)
+            : configuredProviderID
+        guard !providerID.isEmpty else {
+            return PromptCardModelPicker(
+                summary: "Choose provider first",
+                selectedModel: "",
+                models: [],
+                providerName: "",
+                onSelectModel: { _ in },
+                onOpenProviders: {
+                    self.selectedConfigurationSection = .providers
+                    self.expandedProviderID = nil
+                }
+            )
+        }
+
+        let providerName = self.viewModel.providerDisplayName(for: providerID)
+        let configuredModel = configuration.modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selectedModel = configuredModel.isEmpty ? self.viewModel.selectedModel(for: providerID) : configuredModel
+        let summary = selectedModel.isEmpty ? providerName : "\(providerName) - \(selectedModel)"
+
+        return PromptCardModelPicker(
+            summary: summary,
+            selectedModel: selectedModel,
+            models: self.viewModel.models(for: providerID),
+            providerName: providerName,
+            onSelectModel: { modelName in
+                var updated = self.settings.dictationPromptConfiguration(for: selection)
+                updated.providerID = providerID
+                updated.modelName = modelName
+                self.settings.setDictationPromptConfiguration(updated, for: selection)
+            },
+            onOpenProviders: {
+                self.selectedConfigurationSection = .providers
+                self.expandedProviderID = providerID
+            }
+        )
     }
 
     private var promptModeTabSelector: some View {
@@ -227,10 +888,10 @@ extension AIEnhancementSettingsView {
         .padding(3)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(self.theme.palette.contentBackground.opacity(0.78))
+                .fill(self.theme.palette.contentBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(self.theme.palette.cardBorder.opacity(0.22), lineWidth: 1)
+                        .stroke(self.theme.palette.cardBorder, lineWidth: 1)
                 )
         )
     }
@@ -279,125 +940,101 @@ extension AIEnhancementSettingsView {
     private func promptModeSection(mode: SettingsStore.PromptMode) -> some View {
         let customProfiles = self.viewModel.dictationPromptProfiles
             .filter { $0.mode.normalized == mode }
-        let tone = self.modeAccentColor(mode)
-        let isPrivateAILocked = mode.normalized == .dictate && self.viewModel.isPrivateAIModelSelected()
-        let isSelectedAppsOnly = !isPrivateAILocked && self.viewModel.promptRoutingScope(for: mode) == .selectedAppsOnly
-        let isPromptRoutingPaused = self.viewModel.isPromptSelectionOff(for: mode)
+        let isPrivateAI = mode.normalized == .dictate && self.viewModel.isPrivateAIModelSelected()
+        let isSelectedAppsOnly = !isPrivateAI && self.viewModel.promptRoutingScope(for: mode) == .selectedAppsOnly
 
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: self.modeSymbol(mode))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.95))
-                    .frame(width: 20, height: 20)
-                    .background(Circle().fill(tone.opacity(mode.normalized == .dictate ? 0.85 : 0.65)))
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text(mode.normalized == .dictate ? "Dictation Prompt Profiles" : "Edit Text Mode")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(self.theme.palette.primaryText)
-                    Text(" - \(self.promptSectionDescription(for: mode))")
-                        .font(.caption)
-                        .foregroundStyle(self.theme.palette.secondaryText)
-                }
-                .lineLimit(1)
-                .truncationMode(.tail)
-            }
-            .padding(.horizontal, 2)
-
-            if isPrivateAILocked {
-                HStack(spacing: 5) {
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .font(.caption2)
-                    Text("\(PrivateAIProviderFeature.displayName) only works with the \(PrivateAIProviderFeature.displayName) prompt.")
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                        .lineLimit(1)
-                }
-                .foregroundStyle(.orange)
-                .padding(.horizontal, 4)
-            }
-
-            self.promptModeHintRow(mode: mode)
-
-            VStack(alignment: .leading, spacing: 8) {
-                self.promptRoutingScopeRow(mode: mode)
-
-                if isSelectedAppsOnly {
-                    self.selectedAppsOnlySummary(mode: mode)
-                    self.appPromptBindingsSection(mode: mode, isEmphasized: true, isEnabled: !isPromptRoutingPaused)
-                } else {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 10) {
+                if isPrivateAI {
+                    let privateAISelection = SettingsStore.DictationPromptSelection.privateAI
                     self.promptProfileCard(
-                        cardKey: "\(mode.normalized.rawValue)-default",
-                        title: mode.normalized == .dictate ? "Built-in Default" : "Default \(self.friendlyModeName(mode))",
-                        subtitle: self.viewModel.promptPreview(self.viewModel.defaultPromptBodyPreview(for: mode)),
+                        cardKey: "\(mode.normalized.rawValue)-\(PrivateAIProviderFeature.shared.providerID)",
+                        title: PrivateAIProviderFeature.displayName,
+                        subtitle: "",
                         mode: mode,
-                        isSelected: mode.normalized == .dictate
-                            ? (!isPrivateAILocked && !self.viewModel.isPrimaryDictationPromptSelectionOff() && self.viewModel.selectedPromptID(for: mode) == nil)
-                            : (!isPromptRoutingPaused && self.viewModel.selectedPromptID(for: mode) == nil),
-                        onUse: {
-                            self.viewModel.setSelectedPromptID(nil, for: mode)
-                        },
-                        onManage: { self.viewModel.openDefaultPromptViewer(for: mode) },
-                        onResetDefault: { self.viewModel.resetDefaultPromptOverride(for: mode) },
-                        canResetDefault: self.viewModel.hasDefaultPromptOverride(for: mode),
-                        isEnabled: !isPrivateAILocked && !isPromptRoutingPaused
+                        isSelected: true,
+                        assignments: self.promptAssignments(selection: privateAISelection, isPrivateAI: true),
+                        onManage: { self.viewModel.openPrivateAIPromptEditor() },
+                        isEnabled: true
                     )
 
-                    if mode.normalized == .dictate && PrivateFeatures.privateAIProvider {
-                        self.promptProfileCard(
-                            cardKey: "\(mode.normalized.rawValue)-\(PrivateAIProviderFeature.shared.providerID)",
-                            title: PrivateAIProviderFeature.displayName,
-                            subtitle: isPrivateAILocked
-                                ? "Uses the \(PrivateAIProviderFeature.displayName) prompt."
-                                : "Select \(PrivateAIProviderFeature.displayName) to enable.",
-                            mode: mode,
-                            isSelected: self.viewModel.isPrivateAIPromptSelected(),
-                            onUse: {
-                                self.viewModel.selectPrivateAIPromptIfAvailable()
-                            },
-                            isEnabled: isPrivateAILocked
-                        )
-                    }
+                    self.privateAIOnlyNotice
+                } else {
+                    self.promptRoutingScopeRow(mode: mode)
 
-                    if customProfiles.isEmpty {
-                        Text("No custom \(self.friendlyModeName(mode).lowercased()) prompts yet.")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 4)
-                    } else {
-                        ForEach(customProfiles) { profile in
-                            self.promptProfileCard(
-                                cardKey: "\(profile.mode.normalized.rawValue)-\(profile.id)",
-                                title: profile.name.isEmpty ? "Untitled Prompt" : profile.name,
-                                subtitle: SettingsStore.stripBasePrompt(for: profile.mode, from: profile.prompt).isEmpty
-                                    ? "Empty prompt (uses Default)"
-                                    : self.viewModel.promptPreview(SettingsStore.stripBasePrompt(for: profile.mode, from: profile.prompt)),
-                                mode: profile.mode,
-                                isSelected: !isPrivateAILocked && !isPromptRoutingPaused && self.viewModel.selectedPromptID(for: profile.mode) == profile.id,
-                                onUse: {
-                                    self.viewModel.setSelectedPromptID(profile.id, for: profile.mode)
-                                },
-                                onManage: { self.viewModel.openEditor(for: profile) },
-                                onDelete: { self.viewModel.requestDeletePrompt(profile) },
-                                isEnabled: !isPrivateAILocked && !isPromptRoutingPaused
-                            )
+                    Text(isSelectedAppsOnly
+                        ? "Custom prompts only run in apps listed in App Overrides."
+                        : "Custom prompts run based on your shortcut or the app you're in."
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(self.theme.palette.secondaryText)
+                    .padding(.horizontal, 4)
+                    .padding(.bottom, 2)
+
+                    Group {
+                        let defaultSelection = SettingsStore.DictationPromptSelection.default
+                        self.promptProfileCard(
+                            cardKey: "\(mode.normalized.rawValue)-default",
+                            title: mode.normalized == .dictate ? "Built-in Default" : "Default \(self.friendlyModeName(mode))",
+                            subtitle: "",
+                            mode: mode,
+                            isSelected: mode.normalized == .dictate
+                                ? (self.viewModel.selectedPromptID(for: mode) == nil)
+                                : (self.viewModel.selectedPromptID(for: mode) == nil),
+                            assignments: mode.normalized == .dictate
+                                ? self.promptAssignments(selection: defaultSelection)
+                                : nil,
+                            onManage: { self.viewModel.openDefaultPromptViewer(for: mode) },
+                            isEnabled: !isSelectedAppsOnly
+                        )
+
+                        if !customProfiles.isEmpty {
+                            ForEach(customProfiles) { profile in
+                                let profileSelection = SettingsStore.DictationPromptSelection.profile(profile.id)
+                                self.promptProfileCard(
+                                    cardKey: "\(profile.mode.normalized.rawValue)-\(profile.id)",
+                                    title: profile.name.isEmpty ? "Untitled Prompt" : profile.name,
+                                    subtitle: "",
+                                    mode: profile.mode,
+                                    isSelected: self.viewModel.selectedPromptID(for: profile.mode) == profile.id,
+                                    assignments: profile.mode.normalized == .dictate
+                                        ? self.promptAssignments(selection: profileSelection)
+                                        : nil,
+                                    onManage: { self.viewModel.openEditor(for: profile) },
+                                    onDelete: { self.viewModel.requestDeletePrompt(profile) },
+                                    isEnabled: !isSelectedAppsOnly
+                                )
+                            }
                         }
                     }
+                    .opacity(isSelectedAppsOnly ? 0.5 : 1)
 
-                    self.appPromptBindingsSection(mode: mode, isEnabled: !isPrivateAILocked && !isPromptRoutingPaused)
+                    self.appPromptBindingsSection(mode: mode, isEmphasized: isSelectedAppsOnly, isEnabled: true)
                 }
             }
-            .opacity(isPromptRoutingPaused ? 0.34 : 1)
-            .grayscale(isPromptRoutingPaused ? 0.75 : 0)
-            .allowsHitTesting(!isPromptRoutingPaused)
         }
-        .padding(12)
+        .padding(.top, 2)
+    }
+
+    private var privateAIOnlyNotice: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text("\(PrivateAIProviderFeature.displayName) uses its own built-in system prompt. Switch to another provider to create custom prompts.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 13)
+        .padding(.vertical, 10)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(self.theme.palette.cardBackground.opacity(0.68))
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(self.theme.palette.cardBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(self.theme.palette.cardBorder.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(self.theme.palette.cardBorder, lineWidth: 1)
                 )
         )
     }
@@ -405,7 +1042,7 @@ extension AIEnhancementSettingsView {
     private func promptModeHintRow(mode: SettingsStore.PromptMode) -> some View {
         HStack {
             if mode.normalized == .dictate {
-                Text("Shortcut preview only. Assign shortcuts in Keyboard Shortcuts.")
+                Text("Default uses the main dictation shortcut. Add a custom shortcut only when a prompt needs one.")
                     .font(.caption2)
                     .foregroundStyle(self.theme.palette.secondaryText)
                     .lineLimit(1)
@@ -416,83 +1053,8 @@ extension AIEnhancementSettingsView {
         .padding(.horizontal, 4)
     }
 
-    private func cleanupSegmentedControl(isOff: Bool, mode: SettingsStore.PromptMode) -> some View {
-        let tone = self.modeAccentColor(mode)
-
-        return
-            HStack(spacing: 4) {
-                self.cleanupSegmentButton(
-                    title: "Off",
-                    key: "off",
-                    isSelected: isOff,
-                    tone: tone,
-                    action: { self.viewModel.setPromptSelectionOff(true, for: mode) }
-                )
-
-                self.cleanupSegmentButton(
-                    title: "On",
-                    key: "on",
-                    isSelected: !isOff,
-                    tone: tone,
-                    action: {
-                        if mode.normalized == .dictate, self.viewModel.isPrivateAIModelSelected() {
-                            self.viewModel.selectPrivateAIPromptIfAvailable()
-                        } else {
-                            self.viewModel.setSelectedPromptID(nil, for: mode)
-                        }
-                    }
-                )
-            }
-            .font(.system(size: 12, weight: .semibold))
-            .padding(3)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(self.theme.palette.contentBackground.opacity(0.78))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(self.theme.palette.cardBorder.opacity(0.22), lineWidth: 1)
-                    )
-            )
-    }
-
-    private func cleanupSegmentButton(
-        title: String,
-        key: String,
-        isSelected: Bool,
-        tone: Color,
-        action: @escaping () -> Void
-    ) -> some View {
-        let isHovering = self.hoveredCleanupControlKey == key
-        let cornerRadius: CGFloat = 9
-
-        return Button {
-            action()
-        } label: {
-            Text(title)
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 12)
-        .frame(height: 26)
-        .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .fluidControlSurface(
-            isSelected: isSelected,
-            isHovered: isHovering,
-            tone: tone,
-            cornerRadius: cornerRadius
-        )
-        .foregroundStyle(isSelected ? tone : (isHovering ? self.theme.palette.primaryText : self.theme.palette.secondaryText))
-        .onHover { hovering in
-            self.hoveredCleanupControlKey = hovering ? key : nil
-        }
-    }
-
     private func promptRoutingScopeRow(mode: SettingsStore.PromptMode) -> some View {
         HStack(alignment: .center, spacing: 10) {
-            Text(mode.normalized == .dictate ? "Use AI" : "Use prompts")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(self.theme.palette.secondaryText)
-                .frame(width: AISettingsLayout.promptScopeLabelWidth, alignment: .leading)
-
             HStack(spacing: 4) {
                 self.promptRoutingScopeButton(
                     title: "All apps",
@@ -508,10 +1070,10 @@ extension AIEnhancementSettingsView {
             .padding(3)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(self.theme.palette.contentBackground.opacity(0.78))
+                    .fill(self.theme.palette.contentBackground)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(self.theme.palette.cardBorder.opacity(0.22), lineWidth: 1)
+                            .stroke(self.theme.palette.cardBorder, lineWidth: 1)
                     )
             )
 
@@ -519,9 +1081,15 @@ extension AIEnhancementSettingsView {
 
             if mode.normalized == .edit {
                 self.editModeInlineModelControls
-            } else {
-                Color.clear
-                    .frame(height: AISettingsLayout.controlHeight)
+            } else if !self.viewModel.isPrivateAIModelSelected() {
+                Button {
+                    self.viewModel.openNewPromptEditor(prefillMode: .dictate)
+                } label: {
+                    Label("Add Prompt", systemImage: "plus")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(minWidth: AISettingsLayout.actionMinWidth, minHeight: AISettingsLayout.controlHeight)
+                }
+                .fluidCompactButton(isReady: true, foreground: Color.fluidGreen, borderColor: Color.fluidGreen.opacity(0.5))
             }
         }
         .frame(minHeight: AISettingsLayout.controlHeight)
@@ -536,9 +1104,8 @@ extension AIEnhancementSettingsView {
     ) -> some View {
         let selectedScope = self.viewModel.promptRoutingScope(for: mode)
         let key = "\(mode.normalized.rawValue)-\(scope.rawValue)"
-        let isPrivateAILocked = mode.normalized == .dictate && self.viewModel.isPrivateAIModelSelected()
-        let isSelected = isPrivateAILocked ? scope == .allApps : selectedScope == scope
-        let isEnabled = !isPrivateAILocked
+        let isSelected = selectedScope == scope
+        let isEnabled = true
         let isHovering = isEnabled && self.hoveredPromptScopeKey == key
         let tone = self.modeAccentColor(mode)
         let cornerRadius: CGFloat = 9
@@ -588,10 +1155,10 @@ extension AIEnhancementSettingsView {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(self.theme.palette.cardBackground.opacity(0.34))
+                .fill(self.theme.palette.cardBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(self.theme.palette.cardBorder.opacity(0.22), lineWidth: 1)
+                        .stroke(self.theme.palette.cardBorder, lineWidth: 1)
                 )
         )
     }
@@ -705,11 +1272,18 @@ extension AIEnhancementSettingsView {
         let modeProfiles = self.viewModel.dictationPromptProfiles
             .filter { $0.mode.normalized == mode.normalized }
 
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+
             HStack(alignment: .center, spacing: 10) {
-                Text("App Overrides")
+                Image(systemName: "app.dashed")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(self.theme.palette.secondaryText)
+                Text("App Overrides")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(self.theme.palette.secondaryText)
+
+                Spacer(minLength: 8)
 
                 Menu {
                     if appTargets.isEmpty {
@@ -735,17 +1309,10 @@ extension AIEnhancementSettingsView {
                     Text("+ Add App")
                 }
                 .fluidCompactButton(isReady: true)
-                .frame(minHeight: 26)
+                .frame(minHeight: AISettingsLayout.controlHeight)
                 .disabled(!isEnabled)
                 .opacity(isEnabled ? 1 : 0.48)
-
-                Spacer(minLength: 8)
             }
-
-            Text(isEmphasized ? "Use prompts only in selected apps." : "Use a different prompt only in selected apps.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 4)
 
             if bindings.isEmpty {
                 Text("No app overrides yet. Add one to use a different prompt for a specific app.")
@@ -763,7 +1330,7 @@ extension AIEnhancementSettingsView {
                 }
             }
         }
-        .padding(.top, isEmphasized ? 2 : 6)
+        .padding(.top, 4)
     }
 
     @ViewBuilder
@@ -773,83 +1340,92 @@ extension AIEnhancementSettingsView {
         modeProfiles: [SettingsStore.DictationPromptProfile],
         isEnabled: Bool = true
     ) -> some View {
-        HStack(spacing: 10) {
-            self.appIconView(bundleID: binding.appBundleID)
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(binding.appName)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(self.theme.palette.primaryText)
-                    .lineLimit(1)
-                Text(binding.appBundleID)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+        return VStack(spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
+                self.appIconView(bundleID: binding.appBundleID)
+                    .frame(width: 34, height: 34)
 
-            Spacer(minLength: 8)
-
-            Menu {
-                Button("Default") {
-                    self.viewModel.setPromptID(nil, for: binding)
-                }
-
-                Divider()
-
-                Button("Create New Prompt…") {
-                    self.viewModel.openNewPromptEditor(prefillMode: mode)
-                }
-
-                if !modeProfiles.isEmpty {
-                    Divider()
-                    ForEach(modeProfiles) { profile in
-                        Button(profile.name.isEmpty ? "Untitled Prompt" : profile.name) {
-                            self.viewModel.setPromptID(profile.id, for: binding)
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Text(self.viewModel.promptName(for: mode, promptID: binding.promptID))
-                        .font(.caption)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(binding.appName)
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(self.theme.palette.primaryText)
                         .lineLimit(1)
+                    Text(binding.appBundleID)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(self.theme.palette.cardBackground.opacity(0.5))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(self.theme.palette.cardBorder.opacity(0.35), lineWidth: 1)
-                        )
-                )
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize(horizontal: true, vertical: false)
-            .disabled(!isEnabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button {
-                guard isEnabled else { return }
-                self.viewModel.removeAppPromptBinding(binding)
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.red.opacity(0.9))
+                Spacer(minLength: 10)
+
+                HStack(spacing: 8) {
+                    Menu {
+                        Button("Default") {
+                            self.viewModel.setPromptID(nil, for: binding)
+                        }
+
+                        Divider()
+
+                        Button("Create New Prompt…") {
+                            self.viewModel.openNewPromptEditor(prefillMode: mode)
+                        }
+
+                        if !modeProfiles.isEmpty {
+                            Divider()
+                            ForEach(modeProfiles) { profile in
+                                Button(profile.name.isEmpty ? "Untitled Prompt" : profile.name) {
+                                    self.viewModel.setPromptID(profile.id, for: binding)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(self.viewModel.promptName(for: mode, promptID: binding.promptID))
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(self.theme.palette.primaryText)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Spacer(minLength: 4)
+                            FluidPickerDisclosureIcon(backgroundOpacity: 0.6)
+                        }
+                        .searchablePickerControlChrome(
+                            width: 200,
+                            height: AISettingsLayout.controlHeight,
+                            usesMaterial: false,
+                            showsShadow: false
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!isEnabled)
+
+                    Button {
+                        guard isEnabled else { return }
+                        self.viewModel.removeAppPromptBinding(binding)
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: AISettingsLayout.providerRowControlHeight, height: AISettingsLayout.providerRowControlHeight)
+                    }
+                    .buttonStyle(SquareIconButtonStyle(foreground: .red, borderColor: .red.opacity(0.5)))
+                    .disabled(!isEnabled)
+                    .help("Remove app-specific override")
+                }
+                .fixedSize(horizontal: true, vertical: false)
             }
-            .buttonStyle(.plain)
-            .disabled(!isEnabled)
-            .help("Remove app-specific override")
         }
-        .opacity(isEnabled ? 1 : 0.48)
-        .padding(8)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 9)
+        .frame(minHeight: 86)
+        .opacity(isEnabled ? 1 : 0.68)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(self.theme.palette.cardBackground.opacity(0.35))
+            shape
+                .fill(self.theme.palette.cardBackground.opacity(0.7))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(self.theme.palette.cardBorder.opacity(0.2), lineWidth: 1)
+                    shape
+                        .stroke(self.theme.palette.cardBorder.opacity(0.3), lineWidth: 1)
                 )
         )
     }
@@ -869,7 +1445,7 @@ extension AIEnhancementSettingsView {
                 .frame(width: 24, height: 24)
                 .background(
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(self.theme.palette.cardBackground.opacity(0.55))
+                        .fill(self.theme.palette.cardBackground)
                 )
         }
     }
@@ -1010,7 +1586,7 @@ extension AIEnhancementSettingsView {
     private func promptSectionDescription(for mode: SettingsStore.PromptMode) -> String {
         switch mode {
         case .dictate:
-            return "Create dictation prompt bodies here. The primary shortcut preview is shown here; both shortcut assignments are set in Keyboard Shortcuts."
+            return "Each prompt can have its own provider, model, and optional shortcut."
         case .edit, .write, .rewrite:
             return "Uses selected text as context (when text is selected) - Edit or rewrite selected text - answer questions, summarize, convert to bullets etc."
         }
@@ -1055,12 +1631,16 @@ extension AIEnhancementSettingsView {
                         case let .defaultPrompt(promptMode): return "Default \(self.friendlyModeName(promptMode)) Prompt"
                         case let .newPrompt(prefillMode): return "New \(self.friendlyModeName(prefillMode)) Prompt"
                         case .edit: return "Edit Prompt"
+                        case .privateAI: return PrivateAIProviderFeature.displayName
                         }
                     }())
                         .font(.headline)
-                    Text(mode.isDefault
-                        ? "This is the built-in prompt. Create a custom prompt to override it."
-                        : "Prompt text is appended to the hidden base prompt for the selected mode."
+                    Text(mode.isPrivateAI
+                        ? "Built-in system prompt. Only the shortcut can be customized."
+                        : (mode.isDefault
+                            ? "This is the built-in prompt. Create a custom prompt to override it."
+                            : "Prompt text is appended to the hidden base prompt for the selected mode."
+                        )
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -1068,53 +1648,47 @@ extension AIEnhancementSettingsView {
                 Spacer()
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Mode")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Picker("", selection: self.$viewModel.draftPromptMode) {
-                    ForEach(SettingsStore.PromptMode.visiblePromptModes) { mode in
-                        Text(self.friendlyModeName(mode)).tag(mode)
-                    }
+            if self.shouldShowPromptEditorConfigurationPanel(for: mode) {
+                self.promptEditorConfigurationPanel(mode: mode)
+            }
+
+            if !mode.isPrivateAI {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Name")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    let isDefaultNameLocked = mode.isDefault
+                    TextField("Prompt name", text: self.$viewModel.draftPromptName)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(isDefaultNameLocked)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .disabled(mode.isDefault)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Name")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                let isDefaultNameLocked = mode.isDefault
-                TextField("Prompt name", text: self.$viewModel.draftPromptName)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(isDefaultNameLocked)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Prompt")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                PromptTextView(
-                    text: self.$viewModel.draftPromptText,
-                    isEditable: true,
-                    font: NSFont.monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
-                )
-                .id(self.viewModel.promptEditorSessionID)
-                .frame(minHeight: 180)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(self.theme.palette.contentBackground.opacity(0.7))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(self.theme.palette.cardBorder.opacity(0.35), lineWidth: 1)
-                        )
-                )
-                .onChange(of: self.viewModel.draftPromptText) { _, newValue in
-                    guard self.viewModel.draftPromptMode == .dictate else { return }
-                    let combined = self.viewModel.combinedDraftPrompt(newValue, mode: self.viewModel.draftPromptMode)
-                    self.promptTest.updateDraftPromptText(combined)
+            if !mode.isPrivateAI {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Prompt")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    PromptTextView(
+                        text: self.$viewModel.draftPromptText,
+                        isEditable: true,
+                        font: NSFont.monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+                    )
+                    .id(self.viewModel.promptEditorSessionID)
+                    .frame(minHeight: 180)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(self.theme.palette.contentBackground)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(self.theme.palette.cardBorder, lineWidth: 1)
+                            )
+                    )
+                    .onChange(of: self.viewModel.draftPromptText) { _, newValue in
+                        guard self.viewModel.draftPromptMode == .dictate else { return }
+                        let combined = self.viewModel.combinedDraftPrompt(newValue, mode: self.viewModel.draftPromptMode)
+                        self.promptTest.updateDraftPromptText(combined)
+                    }
                 }
             }
 
@@ -1134,10 +1708,10 @@ extension AIEnhancementSettingsView {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(self.theme.palette.contentBackground.opacity(0.7))
+                                .fill(self.theme.palette.contentBackground)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .stroke(self.theme.palette.cardBorder.opacity(0.35), lineWidth: 1)
+                                        .stroke(self.theme.palette.cardBorder, lineWidth: 1)
                                 )
                         )
                 }
@@ -1145,7 +1719,7 @@ extension AIEnhancementSettingsView {
 
             // MARK: - Test Mode
 
-            if self.viewModel.draftPromptMode == .dictate {
+            if self.viewModel.draftPromptMode == .dictate && !mode.isPrivateAI {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Image(systemName: "waveform")
@@ -1216,10 +1790,10 @@ extension AIEnhancementSettingsView {
                             .scrollContentBackground(.hidden)
                             .background(
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(self.theme.palette.contentBackground.opacity(0.7))
+                                    .fill(self.theme.palette.contentBackground)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                            .stroke(self.theme.palette.cardBorder.opacity(0.35), lineWidth: 1)
+                                            .stroke(self.theme.palette.cardBorder, lineWidth: 1)
                                     )
                             )
                         }
@@ -1237,10 +1811,10 @@ extension AIEnhancementSettingsView {
                             .scrollContentBackground(.hidden)
                             .background(
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(self.theme.palette.contentBackground.opacity(0.7))
+                                    .fill(self.theme.palette.contentBackground)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                            .stroke(self.theme.palette.cardBorder.opacity(0.35), lineWidth: 1)
+                                            .stroke(self.theme.palette.cardBorder, lineWidth: 1)
                                     )
                             )
                         }
@@ -1249,10 +1823,10 @@ extension AIEnhancementSettingsView {
                 .padding(12)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(self.theme.palette.accent.opacity(0.06))
+                        .fill(self.theme.palette.accent.opacity(0.08))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(self.theme.palette.cardBorder.opacity(0.5), lineWidth: 1)
+                                .stroke(self.theme.palette.cardBorder, lineWidth: 1)
                         )
                 )
             } else if self.promptTest.isActive {
@@ -1263,13 +1837,30 @@ extension AIEnhancementSettingsView {
             }
 
             HStack(spacing: 10) {
-                Button(mode.isDefault ? "Close" : "Cancel") {
+                if mode.isDefault,
+                   let promptMode = mode.mode,
+                   self.viewModel.hasDefaultPromptOverride(for: promptMode)
+                {
+                    Button("Reset to Built-in") {
+                        self.viewModel.resetDefaultPromptOverride(for: promptMode)
+                        self.viewModel.openDefaultPromptViewer(for: promptMode)
+                        self.preparePromptEditorConfigurationDraft(mode: .defaultPrompt(mode: promptMode))
+                    }
+                    .fluidButton(.compact, size: .compact)
+                    .frame(minWidth: AISettingsLayout.primaryActionMinWidth, minHeight: AISettingsLayout.controlHeight)
+                }
+
+                Spacer(minLength: 0)
+
+                Button("Cancel") {
+                    self.restorePromptEditorConfigurationDraft(mode: mode)
                     self.viewModel.closePromptEditor()
                 }
                 .fluidButton(.compact, size: .compact)
                 .frame(minWidth: AISettingsLayout.actionMinWidth, minHeight: AISettingsLayout.controlHeight)
 
                 Button("Save") {
+                    self.applyPromptEditorConfigurationDraft(mode: mode)
                     self.viewModel.savePromptEditor(mode: mode)
                 }
                 .fluidButton(.glass, size: .compact)
@@ -1278,9 +1869,33 @@ extension AIEnhancementSettingsView {
             }
         }
         .padding()
-        .frame(minWidth: 520, minHeight: 420)
+        .frame(minWidth: 780, idealWidth: 820, minHeight: 420)
+        .onAppear {
+            self.preparePromptEditorConfigurationDraft(mode: mode)
+        }
         .onDisappear {
             self.promptTest.deactivate()
+        }
+        .onChange(of: self.viewModel.promptEditorSessionID) { _, _ in
+            self.preparePromptEditorConfigurationDraft(mode: mode)
+        }
+        .onChange(of: self.activeShortcutRecordingTarget) { oldValue, newValue in
+            if case .newPrompt = mode {
+                if newValue == nil, oldValue != nil {
+                    if let pending = self.viewModel.pendingNewPromptConfiguration {
+                        self.promptEditorShortcutDraft = pending.shortcut
+                    } else {
+                        self.promptEditorShortcutDraft = nil
+                    }
+                }
+                return
+            }
+            guard newValue == nil, oldValue != nil,
+                  let selection = self.promptEditorSelection(for: mode)
+            else {
+                return
+            }
+            self.promptEditorShortcutDraft = self.settings.dictationPromptConfiguration(for: selection).shortcut
         }
         .onChange(of: self.viewModel.selectedProviderID) { _, _ in
             self.autoDisablePromptTestIfNeeded()
@@ -1306,6 +1921,10 @@ extension AIEnhancementSettingsView {
 
     func openNewPromptEditor(prefillMode: SettingsStore.PromptMode = .edit) {
         self.viewModel.openNewPromptEditor(prefillMode: prefillMode)
+    }
+
+    func openPrivateAIPromptEditor() {
+        self.viewModel.openPrivateAIPromptEditor()
     }
 
     func openEditor(for profile: SettingsStore.DictationPromptProfile) {

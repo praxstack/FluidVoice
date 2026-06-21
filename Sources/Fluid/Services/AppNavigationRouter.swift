@@ -26,4 +26,6 @@ final class AppNavigationRouter {
 
 extension Notification.Name {
     static let appNavigationRequested = Notification.Name("AppNavigationRequested")
+    static let dictationPromptShortcutsChanged = Notification.Name("DictationPromptShortcutsChanged")
+    static let newPromptShortcutRecorded = Notification.Name("NewPromptShortcutRecorded")
 }

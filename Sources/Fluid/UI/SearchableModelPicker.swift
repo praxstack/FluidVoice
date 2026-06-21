@@ -42,6 +42,17 @@ struct SearchableModelPicker: View {
     @State private var searchText = ""
     @State private var isShowingPopover = false
 
+    private var refreshButtonSize: CGFloat {
+        self.controlHeight ?? 24
+    }
+
+    private var pickerControlWidth: CGFloat? {
+        guard self.onRefresh != nil, self.controlHeight != nil else {
+            return self.controlWidth
+        }
+        return max(self.controlWidth - self.refreshButtonSize - 8, 80)
+    }
+
     private var filteredModels: [String] {
         if self.searchText.isEmpty {
             return self.models
@@ -53,16 +64,17 @@ struct SearchableModelPicker: View {
         HStack(spacing: 8) {
             // Model button that opens popover
             Button(action: { self.isShowingPopover.toggle() }) {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     Text(self.selectedModel.isEmpty ? "Select Model" : self.selectedModel)
+                        .font(.system(size: 12, weight: .semibold))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .foregroundStyle(self.selectedModel.isEmpty ? .secondary : .primary)
+                        .foregroundStyle(self.selectedModel.isEmpty ? .secondary : self.theme.palette.primaryText)
                     Spacer(minLength: 6)
                     FluidPickerDisclosureIcon(backgroundOpacity: 0.6)
                 }
                 .searchablePickerControlChrome(
-                    width: self.controlWidth,
+                    width: self.pickerControlWidth,
                     height: self.controlHeight,
                     usesMaterial: true,
                     showsShadow: true
@@ -172,17 +184,19 @@ struct SearchableModelPicker: View {
                     Button(action: {
                         Task { await onRefresh() }
                     }) {
-                        if self.isRefreshing {
-                            ProgressView()
-                                .scaleEffect(0.6)
-                                .frame(width: 16, height: 16)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 12, weight: .semibold))
+                        ZStack {
+                            if self.isRefreshing {
+                                ProgressView()
+                                    .scaleEffect(0.6)
+                                    .frame(width: 16, height: 16)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
                         }
+                        .frame(width: self.refreshButtonSize, height: self.refreshButtonSize)
                     }
-                    .fluidButton(.accent, size: .small)
-                    .frame(width: self.controlHeight, height: self.controlHeight)
+                    .fluidCompactButton(isReady: false)
                     .disabled(self.isRefreshing || !self.refreshEnabled)
                     .opacity(self.refreshEnabled ? 1 : 0.45)
                     .help("Refresh model list")

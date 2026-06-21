@@ -51,50 +51,18 @@ extension AIEnhancementSettingsView {
             ThemedCard(style: .prominent, hoverEffect: false) {
                 VStack(alignment: .leading, spacing: 16) {
                     self.aiSetupHeader
-                    self.aiSetupSummaryBar
+                    self.aiConfigurationSectionPicker
 
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Providers")
-                                .font(.system(size: 14, weight: .semibold))
-                            Text("Configure your AI provider")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    Group {
+                        switch self.selectedConfigurationSection {
+                        case .providers:
+                            self.providerConfigurationContent
+                        case .advancedPrompts:
+                            self.promptsStepContent
                         }
-
-                        Spacer()
-
-                        Button(action: { self.viewModel.showHelp.toggle() }) {
-                            HStack(spacing: 5) {
-                                Image(systemName: self.viewModel.showHelp ? "questionmark.circle.fill" : "questionmark.circle")
-                                    .font(.system(size: 14))
-                                Text("Help")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                            }
-                            .foregroundStyle(self.viewModel.showHelp ? self.theme.palette.accent : .secondary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule()
-                                    .fill(self.viewModel.showHelp ? self.theme.palette.accent.opacity(0.12) : self.theme.palette.cardBackground.opacity(0.8))
-                                    .overlay(
-                                        Capsule()
-                                            .stroke(self.viewModel.showHelp ? self.theme.palette.accent.opacity(0.3) : self.theme.palette.cardBorder.opacity(0.4), lineWidth: 1)
-                                    )
-                            )
-                        }
-                        .buttonStyle(.plain)
                     }
-
-                    if self.viewModel.showHelp { self.helpSectionView }
-
-                    self.providerStepContent
-
-                    Divider()
-                        .background(self.theme.palette.separator.opacity(0.5))
-
-                    self.promptsStepContent
+                    .transition(.opacity)
+                    .animation(.easeOut(duration: 0.12), value: self.selectedConfigurationSection)
                 }
                 .padding(16)
             }
@@ -130,12 +98,113 @@ extension AIEnhancementSettingsView {
                     .font(.title3)
                     .fontWeight(.semibold)
                     .foregroundStyle(self.theme.palette.primaryText)
-                Text("Choose the model used for AI Enhancement.")
+                Text("Set up providers and prompt behavior separately.")
                     .font(.caption)
                     .foregroundStyle(self.theme.palette.secondaryText)
             }
 
             Spacer()
+        }
+    }
+
+    private var aiConfigurationSectionPicker: some View {
+        HStack(spacing: 3) {
+            ForEach(AIEnhancementConfigurationSection.allCases) { section in
+                self.aiConfigurationSectionButton(section)
+            }
+        }
+        .padding(4)
+        .background(
+            Capsule(style: .continuous)
+                .fill(self.theme.palette.contentBackground.opacity(0.78))
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(self.theme.palette.cardBorder.opacity(0.24), lineWidth: 1)
+                )
+        )
+        .frame(maxWidth: .infinity, alignment: .center)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func aiConfigurationSectionButton(_ section: AIEnhancementConfigurationSection) -> some View {
+        let isSelected = self.selectedConfigurationSection == section
+        let isHovering = self.hoveredConfigurationSection == section
+        let tone = self.theme.palette.accent
+        let shape = Capsule(style: .continuous)
+
+        return Button {
+            self.selectedConfigurationSection = section
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: section.systemImage)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(section.title)
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(isSelected ? tone : (isHovering ? self.theme.palette.primaryText : self.theme.palette.secondaryText))
+            .frame(width: 176, height: 36)
+            .contentShape(shape)
+            .background(
+                shape
+                    .fill(isSelected ? tone.opacity(0.13) : (isHovering ? self.theme.palette.cardBackground.opacity(0.66) : .clear))
+                    .overlay(
+                        shape
+                            .stroke(isSelected ? tone.opacity(0.46) : (isHovering ? self.theme.palette.cardBorder.opacity(0.36) : .clear), lineWidth: 1)
+                    )
+                    .shadow(color: isSelected ? tone.opacity(0.18) : .clear, radius: 8, x: 0, y: 2)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(section.title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .onHover { hovering in
+            self.hoveredConfigurationSection = hovering ? section : nil
+        }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .animation(.easeOut(duration: 0.12), value: isSelected)
+    }
+
+    private var providerConfigurationContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            self.aiSetupSummaryBar
+
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Providers")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Configure local models and API providers.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button(action: { self.viewModel.showHelp.toggle() }) {
+                    HStack(spacing: 5) {
+                        Image(systemName: self.viewModel.showHelp ? "questionmark.circle.fill" : "questionmark.circle")
+                            .font(.system(size: 14))
+                        Text("Help")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                    .foregroundStyle(self.viewModel.showHelp ? self.theme.palette.accent : .secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(self.viewModel.showHelp ? self.theme.palette.accent.opacity(0.12) : self.theme.palette.cardBackground.opacity(0.8))
+                            .overlay(
+                                Capsule()
+                                    .stroke(self.viewModel.showHelp ? self.theme.palette.accent.opacity(0.3) : self.theme.palette.cardBorder.opacity(0.4), lineWidth: 1)
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            if self.viewModel.showHelp { self.helpSectionView }
+
+            self.providerStepContent
         }
     }
 
@@ -146,13 +215,13 @@ extension AIEnhancementSettingsView {
                 self.aiSetupSummaryDivider
                 self.aiSetupSummaryItem(icon: "cloud", text: "Cloud models use provider APIs")
                 self.aiSetupSummaryDivider
-                self.aiSetupSummaryItem(icon: "slider.horizontal.3", text: "AI Enhancement enables dictation prompts")
+                self.aiSetupSummaryItem(icon: "keyboard", text: "Shortcuts choose when prompts run")
             }
 
             VStack(alignment: .leading, spacing: 7) {
                 self.aiSetupSummaryItem(icon: "cpu", text: "Local models run on Mac")
                 self.aiSetupSummaryItem(icon: "cloud", text: "Cloud models use provider APIs")
-                self.aiSetupSummaryItem(icon: "slider.horizontal.3", text: "AI Enhancement enables dictation prompts")
+                self.aiSetupSummaryItem(icon: "keyboard", text: "Shortcuts choose when prompts run")
             }
         }
         .padding(.horizontal, 2)
@@ -413,6 +482,51 @@ extension AIEnhancementSettingsView {
         }
     }
 
+    /// Shared companion button for provider picker rows — identical size/style everywhere.
+    /// Uses a fixed square frame so icon-only buttons don't get horizontal padding from CompactButtonStyle.
+    @ViewBuilder
+    func companionIconButton(
+        systemName: String,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: AISettingsLayout.providerRowControlHeight, height: AISettingsLayout.providerRowControlHeight)
+        }
+        .buttonStyle(SquareIconButtonStyle())
+        .help(help)
+    }
+
+    /// Shared companion button with loading state — for refresh buttons.
+    @ViewBuilder
+    func companionIconButton(
+        isRefreshing: Bool,
+        disabled: Bool = false,
+        opacity: Double = 1,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            ZStack {
+                if isRefreshing {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+            }
+            .frame(width: AISettingsLayout.providerRowControlHeight, height: AISettingsLayout.providerRowControlHeight)
+        }
+        .buttonStyle(SquareIconButtonStyle())
+        .disabled(disabled)
+        .opacity(opacity)
+        .help(help)
+    }
+
     private func providerCard(_ item: ProviderItem) -> some View {
         let isAppleDisabled = item.id == "apple-intelligence-disabled"
         let isPrivateAIProvider = item.id == PrivateAIProviderFeature.shared.providerID
@@ -548,7 +662,7 @@ extension AIEnhancementSettingsView {
         let canVerify = isInstalled && (!isVerified || hasLoadFailure) && !self.privateAISelectedModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Text("Model")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
@@ -559,16 +673,12 @@ extension AIEnhancementSettingsView {
                     selectedModel: self.privateAIModelBinding,
                     selectionEnabled: !isBusy,
                     controlWidth: 180,
-                    controlHeight: 30
+                    controlHeight: AISettingsLayout.providerRowControlHeight
                 )
 
-                Button(action: { self.revealPrivateAIModelFolder() }) {
-                    Image(systemName: "folder")
-                        .font(.system(size: 12, weight: .semibold))
+                self.companionIconButton(systemName: "folder", help: "Open downloaded model folder") {
+                    self.revealPrivateAIModelFolder()
                 }
-                .fluidButton(.compact, size: .compact)
-                .frame(width: 28, height: 28)
-                .help("Open downloaded model folder")
             }
 
             if isDownloading || isLoading || isLoaded || hasLoadFailure || isVerified || !isInstalled {
@@ -610,7 +720,7 @@ extension AIEnhancementSettingsView {
                                     .fixedSize()
                             }
                             Text(isDownloading ? Self.downloadButtonText(progress: downloadProgress) : "Download & Verify")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.system(size: 11, weight: .semibold))
                         }
                     }
                     .fluidButton(.accent, size: .small)
@@ -633,7 +743,7 @@ extension AIEnhancementSettingsView {
                                 .fixedSize()
                         }
                         Text(isTesting ? "Loading..." : "Verify")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                     }
                 }
                 .fluidButton(.accent, size: .small)
@@ -756,7 +866,10 @@ extension AIEnhancementSettingsView {
 
         guard !self.privateAILoadState.isDownloading(model.id) else { return }
 
-        self.privateAILoadState = .downloading(modelID: model.id, progress: nil)
+        self.privateAILoadState = .downloading(
+            modelID: model.id,
+            progress: PrivateAIModelDownloadProgress(initialExpectedBytes: model.artifact.byteCount)
+        )
         Task { @MainActor in
             do {
                 DebugLogger.shared.info(
@@ -768,7 +881,7 @@ extension AIEnhancementSettingsView {
                         guard self.privateAISelectedModelID == model.id else { return }
                         self.privateAILoadState = .downloading(
                             modelID: model.id,
-                            progress: progress
+                            progress: progress.withFallbackExpectedBytes(model.artifact.byteCount)
                         )
                     }
                 }
@@ -845,7 +958,7 @@ extension AIEnhancementSettingsView {
 
         if self.privateAILoadState.isLoaded(model.id) {
             return PrivateAIProviderModelStatus(
-                detail: "Ready. Supports dictation mode only.",
+                detail: "Dictation-only model.",
                 color: Color.fluidGreen
             )
         }
@@ -859,7 +972,7 @@ extension AIEnhancementSettingsView {
 
         if self.isPrivateAIModelVerified(model) {
             return PrivateAIProviderModelStatus(
-                detail: "Ready. Supports dictation mode only.",
+                detail: "Dictation-only model.",
                 color: Color.fluidGreen
             )
         }
@@ -1157,7 +1270,7 @@ extension AIEnhancementSettingsView {
                     }
                 }
 
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     Text("Model")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
@@ -1166,16 +1279,25 @@ extension AIEnhancementSettingsView {
                     SearchableModelPicker(
                         models: models,
                         selectedModel: self.modelBinding(for: item.id),
-                        onRefresh: {
-                            Task { await self.viewModel.fetchModelsForCurrentProvider() }
-                        },
-                        isRefreshing: isRefreshing,
-                        refreshEnabled: canFetchModels,
                         selectionEnabled: hasModels,
                         controlWidth: 180,
-                        controlHeight: 30
+                        controlHeight: AISettingsLayout.providerRowControlHeight
                     )
 
+                    self.companionIconButton(
+                        isRefreshing: isRefreshing,
+                        disabled: isRefreshing || !canFetchModels,
+                        opacity: canFetchModels ? 1 : 0.45,
+                        help: "Refresh model list"
+                    ) {
+                        self.activateProvider(item.id)
+                        Task { await self.viewModel.fetchModelsForCurrentProvider() }
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Color.clear
+                        .frame(width: 50, alignment: .leading)
                     self.reasoningButton(for: item.id)
                 }
 
@@ -1366,6 +1488,8 @@ extension AIEnhancementSettingsView {
         let canFetchModels = isLocal ? !baseURL.isEmpty : (hasAPIKey && !baseURL.isEmpty)
         let hasModels = !models.isEmpty
         let isEditing = self.viewModel.showingEditProvider && self.viewModel.selectedProviderID == item.id
+        let iconColumnWidth = AISettingsLayout.providerRowControlHeight
+        let actionColumnWidth: CGFloat = 76
 
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 12) {
@@ -1394,85 +1518,106 @@ extension AIEnhancementSettingsView {
 
                 Spacer()
 
-                if isPrivateAIProvider {
-                    SearchableModelPicker(
-                        models: PrivateAIModelRegistry.modelIDs(),
-                        selectedModel: self.privateAIModelBinding,
-                        selectionEnabled: !isFluidBusy,
-                        controlWidth: 180,
-                        controlHeight: 28
-                    )
-                } else {
-                    SearchableModelPicker(
-                        models: models,
-                        selectedModel: self.modelBinding(for: item.id),
-                        onRefresh: {
+                // Fixed action grid: companion icon, optional reasoning, primary action.
+                HStack(spacing: 8) {
+                    if isPrivateAIProvider {
+                        SearchableModelPicker(
+                            models: PrivateAIModelRegistry.modelIDs(),
+                            selectedModel: self.privateAIModelBinding,
+                            selectionEnabled: !isFluidBusy,
+                            controlWidth: 180,
+                            controlHeight: AISettingsLayout.providerRowControlHeight
+                        )
+
+                        self.companionIconButton(systemName: "folder", help: "Open downloaded model folder") {
+                            self.revealPrivateAIModelFolder()
+                        }
+                        .frame(width: iconColumnWidth, height: AISettingsLayout.providerRowControlHeight)
+
+                        Color.clear
+                            .frame(width: iconColumnWidth, height: AISettingsLayout.providerRowControlHeight)
+
+                        ZStack {
+                            if isFluidDownloading || !isFluidInstalled {
+                                Button(action: { self.downloadPrivateAIModel(fluidModel) }) {
+                                    HStack(spacing: 4) {
+                                        if isFluidDownloading {
+                                            ProgressView()
+                                                .controlSize(.mini)
+                                                .fixedSize()
+                                        }
+                                        Text(isFluidDownloading ? Self.downloadButtonText(progress: fluidDownloadProgress) : "Download")
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .fluidButton(.accent, size: .small)
+                                .frame(width: actionColumnWidth, height: AISettingsLayout.providerRowControlHeight)
+                                .disabled(!fluidModel.canDownload || isFluidBusy)
+                                .help(fluidModel.canDownload ? "Download and verify selected model" : "Download URL is not configured yet")
+                            } else if !isFluidVerified || hasFluidLoadFailure {
+                                Button(action: { self.verifyPrivateAIConnection(fluidModel) }) {
+                                    HStack(spacing: 4) {
+                                        if isFluidLoading || isFluidTesting {
+                                            ProgressView()
+                                                .controlSize(.mini)
+                                                .fixedSize()
+                                        }
+                                        Text((isFluidLoading || isFluidTesting) ? "Loading" : "Verify")
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .fluidButton(.accent, size: .small)
+                                .frame(width: actionColumnWidth, height: AISettingsLayout.providerRowControlHeight)
+                                .disabled(isFluidBusy)
+                                .help("Verify selected model")
+                            }
+                        }
+                        .frame(width: actionColumnWidth, height: AISettingsLayout.providerRowControlHeight)
+                    } else {
+                        SearchableModelPicker(
+                            models: models,
+                            selectedModel: self.modelBinding(for: item.id),
+                            selectionEnabled: hasModels,
+                            controlWidth: 180,
+                            controlHeight: AISettingsLayout.providerRowControlHeight
+                        )
+
+                        self.companionIconButton(
+                            isRefreshing: isRefreshing,
+                            disabled: isRefreshing || !canFetchModels,
+                            opacity: canFetchModels ? 1 : 0.45,
+                            help: "Refresh model list"
+                        ) {
                             self.activateProvider(item.id)
-                            await self.viewModel.fetchModelsForCurrentProvider()
-                        },
-                        isRefreshing: isRefreshing,
-                        refreshEnabled: canFetchModels,
-                        selectionEnabled: hasModels,
-                        controlWidth: 180,
-                        controlHeight: 28
-                    )
-                }
+                            Task { await self.viewModel.fetchModelsForCurrentProvider() }
+                        }
+                        .frame(width: iconColumnWidth, height: AISettingsLayout.providerRowControlHeight)
 
-                if isPrivateAIProvider {
-                    if isFluidDownloading || !isFluidInstalled {
-                        Button(action: { self.downloadPrivateAIModel(fluidModel) }) {
-                            HStack(spacing: 5) {
-                                if isFluidDownloading {
-                                    ProgressView()
-                                        .controlSize(.mini)
-                                        .fixedSize()
-                                }
-                                Text(isFluidDownloading ? Self.downloadButtonText(progress: fluidDownloadProgress) : "Download")
-                                    .font(.system(size: 12, weight: .semibold))
+                        self.reasoningButton(for: item.id)
+                            .frame(width: iconColumnWidth, height: AISettingsLayout.providerRowControlHeight)
+
+                        Button(action: {
+                            self.activateProvider(item.id)
+                            if isEditing {
+                                self.viewModel.clearEditProviderDraft()
+                                self.viewModel.setEditingAPIKey(false, for: item.id)
+                            } else {
+                                self.viewModel.startEditingProvider()
+                                self.viewModel.setEditingAPIKey(true, for: item.id)
                             }
+                        }) {
+                            Text("Edit")
+                                .font(.system(size: 12, weight: .semibold))
+                                .frame(width: actionColumnWidth, height: AISettingsLayout.providerRowControlHeight)
                         }
-                        .fluidButton(.accent, size: .small)
-                        .disabled(!fluidModel.canDownload || isFluidBusy)
-                        .help(fluidModel.canDownload ? "Download and verify selected model" : "Download URL is not configured yet")
-                    } else if !isFluidVerified || hasFluidLoadFailure {
-                        Button(action: { self.verifyPrivateAIConnection(fluidModel) }) {
-                            HStack(spacing: 5) {
-                                if isFluidLoading || isFluidTesting {
-                                    ProgressView()
-                                        .controlSize(.mini)
-                                        .fixedSize()
-                                }
-                                Text((isFluidLoading || isFluidTesting) ? "Loading..." : "Verify")
-                                    .font(.system(size: 12, weight: .semibold))
-                            }
-                        }
-                        .fluidButton(.accent, size: .small)
-                        .disabled(isFluidBusy)
-                        .help("Verify selected model")
+                        .buttonStyle(SquareIconButtonStyle())
+                        .frame(width: actionColumnWidth, height: AISettingsLayout.providerRowControlHeight)
+                        .help("Edit provider")
                     }
-
-                    Button(action: { self.revealPrivateAIModelFolder() }) {
-                        Image(systemName: "folder")
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .fluidButton(.compact, size: .compact)
-                    .frame(width: 28, height: 28)
-                    .help("Open downloaded model folder")
-                } else {
-                    self.reasoningButton(for: item.id)
-
-                    Button("Edit") {
-                        self.activateProvider(item.id)
-                        if isEditing {
-                            self.viewModel.clearEditProviderDraft()
-                            self.viewModel.setEditingAPIKey(false, for: item.id)
-                        } else {
-                            self.viewModel.startEditingProvider()
-                            self.viewModel.setEditingAPIKey(true, for: item.id)
-                        }
-                    }
-                    .fluidButton(.compact, size: .compact)
                 }
+                .fixedSize(horizontal: true, vertical: false)
             }
 
             if isPrivateAIProvider, isFluidDownloading || isFluidLoading || isFluidLoaded || hasFluidLoadFailure || isFluidVerified || !isFluidInstalled {
@@ -1671,12 +1816,7 @@ extension AIEnhancementSettingsView {
                 return self.viewModel.selectedModelByProvider[key] ?? ""
             },
             set: { newValue in
-                let key = self.viewModel.providerKey(for: providerID)
-                self.viewModel.selectedModelByProvider[key] = newValue
-                self.viewModel.settings.selectedModelByProvider = self.viewModel.selectedModelByProvider
-                if providerID == self.viewModel.selectedProviderID {
-                    self.viewModel.selectedModel = newValue
-                }
+                self.viewModel.selectModel(newValue, for: providerID)
             }
         )
     }
@@ -1689,13 +1829,14 @@ extension AIEnhancementSettingsView {
             self.viewModel.openReasoningConfig()
         }) {
             Image(systemName: hasEnabledConfig ? "brain.fill" : "brain")
-                .font(.system(size: 12))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(hasEnabledConfig ? self.theme.palette.accent : self.theme.palette.primaryText)
+                .frame(width: AISettingsLayout.providerRowControlHeight, height: AISettingsLayout.providerRowControlHeight)
         }
-        .fluidCompactButton(
+        .buttonStyle(SquareIconButtonStyle(
             foreground: hasEnabledConfig ? self.theme.palette.accent : nil,
             borderColor: hasEnabledConfig ? self.theme.palette.accent.opacity(0.6) : nil
-        )
-        .frame(width: 28, height: 28)
+        ))
         .help("Configure reasoning parameters")
     }
 
@@ -1705,15 +1846,27 @@ extension AIEnhancementSettingsView {
                 Image(systemName: "text.bubble.fill")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(self.theme.palette.accent)
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text("Prompts & Advanced")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text(" - Choose how to process your speech — email, code, terminal, and more")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                Text("Advanced Prompts")
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Button {
+                    self.isPromptProfilesHelpPresented.toggle()
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(self.theme.palette.secondaryText.opacity(0.78))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Circle())
                 }
-                .lineLimit(1)
-                .truncationMode(.tail)
+                .buttonStyle(.plain)
+                .help("About prompt profiles")
+                .popover(isPresented: self.$isPromptProfilesHelpPresented, arrowEdge: .top) {
+                    self.promptProfilesHelpPopover
+                }
+
+                Spacer()
             }
 
             self.advancedSettingsCard

@@ -1,5 +1,30 @@
 import SwiftUI
 
+enum AIEnhancementConfigurationSection: String, CaseIterable, Identifiable {
+    case providers
+    case advancedPrompts
+
+    var id: String { self.rawValue }
+
+    var title: String {
+        switch self {
+        case .providers:
+            return "AI Providers"
+        case .advancedPrompts:
+            return "Advanced Prompts"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .providers:
+            return "cpu"
+        case .advancedPrompts:
+            return "slider.horizontal.3"
+        }
+    }
+}
+
 enum PrivateAIModelLoadState: Equatable {
     case idle
     case downloading(modelID: String, progress: PrivateAIModelDownloadProgress?)
@@ -49,15 +74,24 @@ struct AIEnhancementSettingsView: View {
     @ObservedObject var settings: SettingsStore
     @ObservedObject var promptTest: DictationPromptTestCoordinator
     let theme: AppTheme
+    @Binding var activeShortcutRecordingTarget: ShortcutRecordingTarget?
+    @Binding var shortcutRecordingMessage: String?
     @State var expandedProviderID: String? = nil
     @State var providerSearchText: String = ""
     @State var privateAISelectedModelID: String = PrivateAIIntegrationService.configuredModelID
     @State var privateAILoadState: PrivateAIModelLoadState = .idle
+    @State var selectedConfigurationSection: AIEnhancementConfigurationSection = .providers
+    @State var hoveredConfigurationSection: AIEnhancementConfigurationSection?
     @State var hoveredPromptCardKey: String? = nil
     @State var selectedPromptMode: SettingsStore.PromptMode = .dictate
     @State var hoveredPromptModeKey: String? = nil
-    @State var hoveredCleanupControlKey: String? = nil
     @State var hoveredPromptScopeKey: String? = nil
+    @State var isPromptProfilesHelpPresented: Bool = false
+    @State var promptEditorPrimarySelectionDraft: SettingsStore.DictationPromptSelection? = nil
+    @State var promptEditorShortcutDraft: HotkeyShortcut? = nil
+    @State var promptEditorProviderIDDraft: String = ""
+    @State var promptEditorModelDraft: String = ""
+    @State var promptEditorOriginalConfiguration: SettingsStore.DictationPromptConfiguration? = nil
 
     var body: some View {
         self.aiConfigurationCard
