@@ -132,7 +132,7 @@ final class LLMClient {
         var maxRetries: Int = 3
         var retryDelayMs: Int = 200
 
-        // Timeout configuration (nil = use default)
+        /// Timeout configuration (nil = use default)
         var timeoutSeconds: TimeInterval?
 
         // Optional real-time callbacks (for streaming UI updates)
@@ -310,7 +310,7 @@ final class LLMClient {
         request.url?.path.contains("/responses") == true
     }
 
-    private func buildChatCompletionsBody(_ config: Config) -> [String: Any] {
+    func buildChatCompletionsBody(_ config: Config) -> [String: Any] {
         var body: [String: Any] = [
             "model": config.model,
             "messages": config.messages,
@@ -327,10 +327,8 @@ final class LLMClient {
             body["tool_choice"] = "auto"
         }
 
-        // Add streaming flag
-        if config.streaming {
-            body["stream"] = true
-        }
+        // Always send stream explicitly — providers like Ollama treat an absent key as true
+        body["stream"] = config.streaming
 
         // Layer 1: Model-specific parameters (e.g., enable_thinking for Nemotron)
         let modelExtras = ThinkingParserFactory.getExtraParameters(for: config.model)
@@ -355,16 +353,15 @@ final class LLMClient {
         return body
     }
 
-    private func buildResponsesBody(_ config: Config) -> [String: Any] {
+    func buildResponsesBody(_ config: Config) -> [String: Any] {
         var body: [String: Any] = [
             "model": config.model,
             "input": self.responsesInput(from: config.messages),
             "store": false,
         ]
 
-        if config.streaming {
-            body["stream"] = true
-        }
+        // Always send stream explicitly — providers like Ollama treat an absent key as true
+        body["stream"] = config.streaming
 
         if !config.tools.isEmpty {
             body["tools"] = self.responsesTools(from: config.tools)
